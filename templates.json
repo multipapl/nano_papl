@@ -1,0 +1,29 @@
+{
+    "input_types": {
+        "Viewport": "Turn this viewport screenshot from Blender 3D to photorealistic architecture photography. Keep composition, architecture shape and materials basics. Keep aspect ratio and camera angle. Strictly adhere to the geometry.",
+        "Render": "Retouch this architectural image. Change the season and atmosphere entirely. Keep the architectural structure and composition. Keep aspect ratio."
+    },
+    "scene_types": {
+        "Exterior": "Focus on the building's integration with the landscape and environment.",
+        "Interior": "Focus on interior lighting, materials, and cozy atmosphere."
+    },
+    "seasons": {
+        "Winter": "Change season to Winter.",
+        "Autumn": "Change season to Autumn.",
+        "Summer": "Summer season."
+    },
+    "default_atmospheres": {
+        "Winter": "Atmosphere: Cold, snowy. No icicle on the roof.",
+        "Autumn": "Atmosphere: Natural mix of the colors on the vegetation, moody, wet asphalt.",
+        "Summer": "Atmosphere: Lush green vegetation, clear air, vibrant colors."
+    },
+    "christmas_desc": "Elegant minimalistic Christmas decorations in the interiors and street.",
+    "lighting": {
+        "Daylight": "Lighting: Natural bright daylight, sharp sun shadows.",
+        "Overcast": "Lighting: Overcast cold diffused light, no harsh shadows.",
+        "Blue Hour": "Lighting: Blue Hour. Deep blue twilight sky, interior lights on.",
+        "Night": "Lighting: Night. Dark sky, emphasis on artificial lighting."
+    },
+    "global_rules": "Adapt vegetation and materials to the new weather conditions. No snow inside the buildings.",
+    "camera": "Shot on 24mm lens. Deep depth of field, sharp focus throughout, f/8. Cinematic lighting, photorealistic."
+}
