@@ -1,9 +1,10 @@
 import json
 from pathlib import Path
+from utils.resource_helper import get_resource_path
 
 class PromptGenerator:
     def __init__(self, templates_file="templates.json"):
-        self.templates_file = templates_file
+        self.templates_file = get_resource_path(templates_file)
         self.data = self._load_templates()
 
     def _load_templates(self):

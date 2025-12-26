@@ -6,3 +6,8 @@ env/
 .idea/
 config.json
 legacy/
+history/
+generated_chat_images/
+_renders/
+.pytest_cache/
+*.log
