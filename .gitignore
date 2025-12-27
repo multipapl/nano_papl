@@ -11,3 +11,11 @@ generated_chat_images/
 _renders/
 .pytest_cache/
 *.log
+
+# PyInstaller
+build/
+dist/
+*.spec
+*.exe
+icon.ico
+tests/

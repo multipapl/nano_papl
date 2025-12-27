@@ -21,7 +21,7 @@ def main():
     sep = ";" if os.name == 'nt' else ":"
     
     cmd = [
-        "pyinstaller",
+        sys.executable, "-m", "PyInstaller",
         "--noconfirm",
         "--onefile",
         "--windowed", # No console
