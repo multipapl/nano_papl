@@ -109,7 +109,7 @@ class ChatWorker(QThread):
 
     def run(self):
         try:
-            client = LLMClient("gemini", "gemini-2.0-flash-exp", self.api_key)
+            client = LLMClient("gemini", "gemini-3-pro-image-preview", self.api_key)
             
             # Construct Settings Text
             settings_text = ""
