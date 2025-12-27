@@ -16,8 +16,7 @@ Nano Papl is a specialized AI-powered tool designed to streamline Architectural 
 
 ## How to use
 
-1. Download the latest `Nano Papl.exe` from the **Releases** page on GitHub.
-2. Run the application.
-3. Go to **Settings** and enter your Google API Key.
-4. Use the **Constructor** to create `prompts.md` for your projects.
-5. Use **Batch Studio** to start the automated rendering process.
+1. Run the application.
+2. Go to **Settings** and enter your Google API Key.
+3. Use the **Constructor** to create `prompts.md` for your projects.
+4. Use **Batch Studio** to start the automated rendering process.
