@@ -35,7 +35,7 @@ class TabConstructor(QWidget):
         self._setup_ui()
         self.load_state()
 
-        content_layout_wrapper = QVBoxLayout(content_widget) # Wrapper if needed, actually calling setup_ui populated self.content_layout
+        # content_layout_wrapper = QVBoxLayout(content_widget) # REMOVED: Redundant
         
         scroll.setWidget(content_widget)
         main_layout.addWidget(scroll)

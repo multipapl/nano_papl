@@ -90,14 +90,16 @@ class ChatWorker(QThread):
     finished_signal = Signal()
     error_signal = Signal(str)
 
-    def __init__(self, api_key, history, user_message, image_paths=None, settings=None, parent=None):
+    def __init__(self, api_key, model_id, history, user_message, image_paths=None, res="1K", ratio="1:1", parent=None):
         super().__init__(parent)
         self.api_key = api_key
-        # model_id and provider handled by LLMClient internally now
+        self.model_id = model_id
+        # provider handled by LLMClient internally now
         self.history = history 
         self.user_message = user_message
         self.image_paths = image_paths or []
-        self.settings = settings or {}
+        self.res = res
+        self.ratio = ratio
         
         self.system_instruction = (
             "You are a Senior Architectural Visualization Art Director. "
@@ -109,24 +111,16 @@ class ChatWorker(QThread):
 
     def run(self):
         try:
-            client = LLMClient("gemini", "gemini-3-pro-image-preview", self.api_key)
+            client = LLMClient("gemini", self.model_id, self.api_key)
             
-            # Construct Settings Text
-            settings_text = ""
-            if self.settings:
-                params = []
-                if "ratio" in self.settings: params.append(f"Aspect Ratio: {self.settings['ratio']}")
-                if "res" in self.settings: params.append(f"Target Resolution Style: {self.settings['res']}")
-                if params:
-                    settings_text = f"[Generation Parameters: {', '.join(params)}]"
-
-            # Call Generic Generate
+            # Call Generic Generate with Native Params
             response_text, img_bytes = client.generate_chat(
                 self.history, 
                 self.user_message, 
                 self.image_paths, 
                 system_instruction=self.system_instruction,
-                settings_text=settings_text
+                resolution=self.res,
+                ratio=self.ratio
             )
             
             response_image_path = ""
@@ -153,8 +147,6 @@ class ChatWorker(QThread):
 class TabChat(QWidget):
     def __init__(self):
         super().__init__()
-    def __init__(self):
-        super().__init__()
         # self.MODEL_ID removed, reading from config dynamicly
         
         # Init History with Config Path
@@ -172,7 +164,14 @@ class TabChat(QWidget):
 
         self._setup_ui()
         self._load_sidebar()
-        self.start_new_chat()
+        
+        # Select last session if exists, else wait
+        if self.list_history.count() > 0:
+            last_item = self.list_history.item(0) # Top of list (newest)
+            self.list_history.setCurrentItem(last_item)
+            self.on_session_clicked(last_item)
+        else:
+            self.add_message("Click '+ New Chat' to start.", is_user=False)
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -205,19 +204,20 @@ class TabChat(QWidget):
         self.list_history = QListWidget()
         self.list_history.setStyleSheet("""
             QListWidget {
-                background-color: transparent; border: none; color: #ccc;
+                background-color: transparent; border: none; color: #ccc; outline: none;
             }
             QListWidget::item {
-                padding: 8px; border-radius: 4px;
+                background-color: transparent; padding: 4px; /* Space for widget */
             }
             QListWidget::item:selected {
-                background-color: #333; color: white;
+                background-color: #333; border-radius: 4px;
             }
             QListWidget::item:hover {
-                background-color: #2a2a2a;
+                background-color: #2a2a2a; border-radius: 4px;
             }
         """)
         self.list_history.itemClicked.connect(self.on_session_clicked)
+        # Context menu still useful for other things or backup
         self.list_history.setContextMenuPolicy(Qt.CustomContextMenu)
         self.list_history.customContextMenuRequested.connect(self.show_context_menu)
         sidebar_layout.addWidget(self.list_history)
@@ -260,6 +260,28 @@ class TabChat(QWidget):
         """)
         self.btn_img_mode.toggled.connect(self.toggle_img_mode)
         config_layout.addWidget(self.btn_img_mode)
+
+        line1 = QFrame()
+        line1.setFrameShape(QFrame.VLine)
+        line1.setStyleSheet("background-color: #444;")
+        config_layout.addWidget(line1)
+
+        # Model Selector
+        config_layout.addWidget(QLabel("Model:"))
+        self.combo_model = QComboBox()
+        self.combo_model.addItems([
+            "gemini-3-pro-image-preview",
+            "gemini-3-flash-preview"
+        ])
+        self.combo_model.setFixedWidth(220)
+        # Revert to simple style to ensure clickability on Windows
+        self.combo_model.setStyleSheet("""
+            QComboBox {
+                background-color: #333; color: white; border: 1px solid #444; border-radius: 4px; padding: 4px;
+            }
+            QComboBox::drop-down { border: none; }
+        """)
+        config_layout.addWidget(self.combo_model)
 
         line = QFrame()
         line.setFrameShape(QFrame.VLine)
@@ -369,9 +391,49 @@ class TabChat(QWidget):
         self.list_history.clear()
         sessions = self.history_manager.list_sessions()
         for sess in sessions:
-            item = QListWidgetItem(sess["title"])
-            item.setData(Qt.UserRole, sess["id"])
+            item = QListWidgetItem()
             self.list_history.addItem(item)
+            
+            # Create Custom Widget for Item
+            item_widget = QWidget()
+            layout_w = QHBoxLayout(item_widget)
+            layout_w.setContentsMargins(5, 2, 5, 2)
+            
+            lbl_title = QLabel(sess["title"])
+            lbl_title.setStyleSheet("color: #ddd; background: transparent;")
+            layout_w.addWidget(lbl_title)
+            layout_w.addStretch()
+            
+            btn_del = QPushButton("🗑️") # Minimal ICON
+            btn_del.setFixedSize(24, 24)
+            btn_del.setCursor(Qt.PointingHandCursor)
+            btn_del.setToolTip("Delete Chat")
+            btn_del.setStyleSheet("""
+                QPushButton { background: transparent; color: #666; border: none; }
+                QPushButton:hover { color: #ff4444; background: #330000; border-radius: 4px; }
+            """)
+            # Use closure to capture session ID
+            btn_del.clicked.connect(lambda _, sid=sess["id"]: self.delete_session_by_id(sid))
+            
+            layout_w.addWidget(btn_del)
+            
+            item.setSizeHint(item_widget.sizeHint())
+            self.list_history.setItemWidget(item, item_widget)
+            
+            # Store ID in item for click handling logic
+            item.setData(Qt.UserRole, sess["id"])
+
+    def delete_session_by_id(self, sid):
+        self.history_manager.delete_session(sid)
+        
+        # If deleting current, clear UI
+        if sid == self.current_session_id:
+            self._clear_chat_ui()
+            self.current_session = None
+            self.current_session_id = None
+            self.add_message("Chat deleted.", is_user=False)
+            
+        self._load_sidebar()
 
     def start_new_chat(self):
         # Save current session one last time if needed (usually handled on message)
@@ -513,15 +575,15 @@ class TabChat(QWidget):
             self.show_typing_indicator(False)
             return
 
-        settings = {}
+        res_val = "1K"
+        ratio_val = "1:1"
         if self.btn_img_mode.isChecked():
-            settings = {
-                "ratio": self.combo_ratio.currentText(),
-                "res": self.combo_res.currentText()
-            }
+            res_val = self.combo_res.currentText().split(" ")[0] # Convert "1K (Standard)" -> "1K"
+            ratio_val = self.combo_ratio.currentText().split(" ")[0] # Convert "16:9 (Landscape)" -> "16:9"
 
         self.worker = ChatWorker(
-            api_key, self.chat_history_api, text, imgs, settings=settings, parent=self
+            api_key, self.combo_model.currentText(), self.chat_history_api, text, imgs, 
+            res=res_val, ratio=ratio_val, parent=self
         )
         self.worker.response_signal.connect(self.on_response)
         self.worker.error_signal.connect(self.on_error)

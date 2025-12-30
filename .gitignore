@@ -5,17 +5,23 @@ env/
 .vscode/
 .idea/
 config.json
-legacy/
 history/
 generated_chat_images/
 _renders/
 .pytest_cache/
 *.log
 
-# PyInstaller
+# PyInstaller & Builds
 build/
 dist/
 *.spec
-*.exe
-icon.ico
+assets/*.ico
+
+# Local Documentation & Reports
+docs/
+
+# Local Scripts
+scripts/AI_AutoCrop.jsx
+
+# Tests
 tests/

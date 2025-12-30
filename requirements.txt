@@ -3,4 +3,5 @@ Pillow
 google-genai
 keyring
 pytest
+pyinstaller
 

@@ -1,4 +1,7 @@
 import sys
+import os
+import json
+from pathlib import Path
 from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QVBoxLayout, QWidget
 from PySide6.QtGui import QIcon, QPalette, QColor
 from PySide6.QtCore import Qt
@@ -15,8 +18,8 @@ class NanoPaplApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Nano Papl | AI Archviz Automation")
-        self.setWindowIcon(QIcon(get_resource_path("icon.png")))
+        self.setWindowTitle("Nano Papl v1.1 | AI Archviz Automation")
+        self.setWindowIcon(QIcon(get_resource_path(os.path.join("assets", "icon.png"))))
         self.resize(1200, 900)
 
         # Central Widget & Tabs
@@ -36,7 +39,7 @@ class NanoPaplApp(QMainWindow):
         self.tabs.addTab(self.tab_batch, "Batch Studio")
 
         self.tab_chat = TabChat()
-        self.tabs.addTab(self.tab_chat, "Ad-hoc Chat")
+        self.tabs.addTab(self.tab_chat, "Chat")
         self.tabs.addTab(TabSettings(), "Settings")
 
 def set_dark_theme(app):

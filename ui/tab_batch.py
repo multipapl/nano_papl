@@ -9,10 +9,24 @@ import datetime
 import math
 import re
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageOps
 from google import genai
 from google.genai import types
 from utils import config_helper
+
+# Empirically Verified Resolution Table (Truth Table)
+RESOLUTION_TABLE = {
+    "1:1":  {"1K": (1024, 1024), "2K": (2048, 2048), "4K": (4096, 4096)},
+    "16:9": {"1K": (1376, 768),  "2K": (2752, 1536), "4K": (5504, 3072)},
+    "9:16": {"1K": (768, 1376),  "2K": (1536, 2752), "4K": (3072, 5504)},
+    "4:3":  {"1K": (1200, 896),  "2K": (2400, 1792), "4K": (4800, 3584)},
+    "3:4":  {"1K": (896, 1200),  "2K": (1792, 2400), "4K": (3584, 4800)},
+    "3:2":  {"1K": (1264, 848),  "2K": (2528, 1696), "4K": (5056, 3392)},
+    "2:3":  {"1K": (848, 1264),  "2K": (1696, 2528), "4K": (3392, 5056)},
+    "5:4":  {"1K": (1152, 928),  "2K": (2304, 1856), "4K": (4608, 3712)},
+    "4:5":  {"1K": (928, 1152),  "2K": (1856, 2304), "4K": (3712, 4608)},
+    "21:9": {"1K": (1584, 672),  "2K": (3168, 1344), "4K": (6336, 2688)}
+}
 
 # --- Custom Widgets ---
 class DragDropLineEdit(QLineEdit):
@@ -64,12 +78,13 @@ class BatchWorker(QThread):
     error_signal = Signal(str)
     preview_signal = Signal(str, str, str) # input_path, output_path, prompt_text
 
-    def __init__(self, api_key, input_path, output_path, resolution, model_id, check_logs, parent=None):
+    def __init__(self, api_key, input_path, output_path, resolution, ratio, model_id, check_logs, parent=None):
         super().__init__(parent)
         self.api_key = api_key
         self.input_path = Path(input_path)
         self.output_path = Path(output_path) if output_path else self.input_path / "_renders"
         self.resolution = resolution
+        self.ratio = ratio
         self.model_id = model_id
         self.check_logs = check_logs
         self.stop_requested = False
@@ -99,6 +114,13 @@ class BatchWorker(QThread):
             for project_dir in projects:
                 if self.stop_requested: break
 
+                # Smart Image Source: Prefer 'optimized' folder if it exists
+                image_source_dir = project_dir / "optimized"
+                if not image_source_dir.exists():
+                    image_source_dir = project_dir
+                else:
+                    self.log_signal.emit(f"  [INFO] Using optimized images from 'optimized' subfolder")
+
                 prompt_path = project_dir / self.PROMPT_FILENAME
                 prompts_data = self.parse_markdown_prompts(prompt_path)
                 
@@ -106,14 +128,19 @@ class BatchWorker(QThread):
                     self.log_signal.emit(f"Skipping '{project_dir.name}': Prompts missing.")
                     continue
                 
-                images = [f for f in project_dir.iterdir() if f.suffix.lower() in valid_exts]
+                images = [f for f in image_source_dir.iterdir() if f.suffix.lower() in valid_exts]
                 
-                # Setup Output Directory
+                # Setup Output Directory (Always use original project name)
                 project_out = self.output_path / project_dir.name
                 project_out.mkdir(parents=True, exist_ok=True)
 
                 for img_path in images:
                     if self.stop_requested: break
+                    
+                    # Output subfolder for this specific image
+                    image_out_dir = project_out / img_path.stem.replace("_optimized", "")
+                    image_out_dir.mkdir(exist_ok=True)
+                    
                     current_ratio = self.get_smart_ratio(img_path)
                     img_data = img_path.read_bytes()
 
@@ -122,15 +149,49 @@ class BatchWorker(QThread):
                         self.log_signal.emit(f"  [{project_dir.name}] {img_path.name} -> {data['title']}")
                         
                         try:
+                            # Dynamic MIME type detection
+                            mime_map = {
+                                '.png': 'image/png',
+                                '.jpg': 'image/jpeg',
+                                '.jpeg': 'image/jpeg',
+                                '.webp': 'image/webp'
+                            }
+                            detected_mime = mime_map.get(img_path.suffix.lower(), 'image/png')
+
+                            # Prepare config with Dynamic Aspect Ratio and Resolution
+                            # 2. Handle Aspect Ratio (Bucket-Perfect Detection)
+                            # 2. Handle Aspect Ratio
+                            # Auto (Native) -> Omitted (Model decides)
+                            # Manual -> Calculated from image (Smart)
+                            image_config_params = {"image_size": self.resolution}
+                            
+                            if self.ratio == "Manual":
+                                smart_ratio = self.get_smart_ratio(img_path)
+                                image_config_params["aspect_ratio"] = smart_ratio
+                                self.log_signal.emit(f"    [INFO] Manual Smart Ratio: {smart_ratio}")
+
+                            # 3. Build Config using Official Google AI Studio structure
+                            gen_config = types.GenerateContentConfig(
+                                response_modalities=["IMAGE", "TEXT"],
+                                image_config=types.ImageConfig(**image_config_params),
+                                temperature=0.4
+                            )
+
+                            # Use types.Content for formal structure
+                            contents = [
+                                types.Content(
+                                    role="user",
+                                    parts=[
+                                        types.Part.from_text(text=data['prompt']),
+                                        types.Part.from_bytes(data=img_data, mime_type=detected_mime)
+                                    ]
+                                )
+                            ]
+
                             response = client.models.generate_content(
                                 model=self.model_id,
-                                contents=[
-                                    data['prompt'],
-                                    types.Part.from_bytes(data=img_data, mime_type="image/png")
-                                ],
-                                config=types.GenerateContentConfig(
-                                    response_modalities=["IMAGE"],
-                                )
+                                contents=contents,
+                                config=gen_config
                             )
                             
                             if response.parts:
@@ -138,12 +199,12 @@ class BatchWorker(QThread):
                                     if part.inline_data:
                                         ts = datetime.datetime.now().strftime("%H%M%S")
                                         base_name = f"{img_path.stem}_{data['title']}_{ts}"
-                                        out_file_path = project_out / f"{base_name}.png"
+                                        out_file_path = image_out_dir / f"{base_name}.png"
                                         out_file_path.write_bytes(part.inline_data.data)
                                         
                                         if self.check_logs:
                                             log_text = f"RATIO: {current_ratio}\nPROMPT:\n{data['prompt']}"
-                                            (project_out / f"{base_name}.txt").write_text(log_text, encoding="utf-8")
+                                            (image_out_dir / f"{base_name}.txt").write_text(log_text, encoding="utf-8")
                                         
                                         self.log_signal.emit(f"    [OK] Saved: {base_name}.png")
                                         
@@ -151,7 +212,8 @@ class BatchWorker(QThread):
                                         self.preview_signal.emit(str(img_path), str(out_file_path), data['prompt'])
 
                         except Exception as e:
-                            self.log_signal.emit(f"    [ERROR] API Call failed: {e}")
+                            self.log_signal.emit(f"    [ERROR] API Call failed for {img_path.name}: {e}")
+                            print(f"DEBUG: Failed prompt:\n{data['prompt']}")
 
             if self.stop_requested:
                 self.log_signal.emit("--- PROCESS STOPPED BY USER ---")
@@ -170,14 +232,14 @@ class BatchWorker(QThread):
     def get_smart_ratio(self, image_path):
         with Image.open(image_path) as img:
             w, h = img.size
-            gcd = math.gcd(w, h)
-            rw, rh = w // gcd, h // gcd
-            if rw > 50 or rh > 50:
-                target = w / h
-                common = [(1,1), (16,9), (9,16), (4,3), (3,4), (21,9), (3,2), (2,3)]
-                best = min(common, key=lambda r: abs(target - r[0]/r[1]))
-                return f"{best[0]}:{best[1]}"
-            return f"{rw}:{rh}"
+            target = w / h
+            # Official Imagen 3 / Gemini Ratios
+            common = [
+                (1, 1), (16, 9), (9, 16), (4, 3), (3, 4), 
+                (3, 2), (2, 3), (5, 4), (4, 5), (21, 9)
+            ]
+            best = min(common, key=lambda r: abs(target - r[0]/r[1]))
+            return f"{best[0]}:{best[1]}"
 
     def parse_markdown_prompts(self, file_path):
         p = Path(file_path)
@@ -198,7 +260,9 @@ class TabBatch(QWidget):
         super().__init__()
         self.worker = None
         self.MODEL_ID = "gemini-3-pro-image-preview"
-        self.scan_results = None  # Store scan results for auto-crop
+        # Empirically Verified Resolution Table (Truth Table)
+        self.MODEL_ID = "gemini-3-pro-image-preview"
+        self.scan_results = None  # Store scan results for optimization
         self._setup_ui()
         self.load_settings()
 
@@ -212,14 +276,12 @@ class TabBatch(QWidget):
         # 1. Config
         # 1. Config Block Removed (Now in Settings)
         
-        # 1.5 Grid Validator (Collapsible)
+        # 1.5 Grid Validator
         grp_validator = QGroupBox("📋 Image Grid Validator (64px)")
-        grp_validator.setCheckable(True)
-        grp_validator.setChecked(False)  # Collapsed by default
         layout_validator = QVBoxLayout()
         
         # Scan button
-        self.btn_scan = QPushButton("🔍 SCAN IMAGES")
+        self.btn_scan = QPushButton("🔍 ANALYZE FOR OPTIMIZATION")
         self.btn_scan.setMinimumHeight(35)
         self.btn_scan.setStyleSheet("""
             QPushButton {
@@ -247,10 +309,10 @@ class TabBatch(QWidget):
         self.validator_report.setPlaceholderText("Click 'SCAN IMAGES' to check grid alignment...")
         layout_validator.addWidget(self.validator_report)
         
-        # Auto-crop button
-        self.btn_autocrop = QPushButton("✂️ AUTO-CROP ALL")
-        self.btn_autocrop.setMinimumHeight(35)
-        self.btn_autocrop.setStyleSheet("""
+        # Optimization button
+        self.btn_crop = QPushButton("🍌 OPTIMIZE FOR NANO BANANA PRO")
+        self.btn_crop.setMinimumHeight(35)
+        self.btn_crop.setStyleSheet("""
             QPushButton {
                 background-color: #2da44e;
                 color: white;
@@ -260,9 +322,9 @@ class TabBatch(QWidget):
             QPushButton:hover { background-color: #2c974b; }
             QPushButton:disabled { background-color: #444; color: #888; }
         """)
-        self.btn_autocrop.clicked.connect(self.auto_crop_images)
-        self.btn_autocrop.setEnabled(False)
-        layout_validator.addWidget(self.btn_autocrop)
+        self.btn_crop.clicked.connect(self.auto_crop_images)
+        self.btn_crop.setEnabled(False)
+        layout_validator.addWidget(self.btn_crop)
         
         grp_validator.setLayout(layout_validator)
         left_layout.addWidget(grp_validator)
@@ -290,12 +352,19 @@ class TabBatch(QWidget):
 
         # Settings
         hbox_settings = QHBoxLayout()
-        hbox_settings.addWidget(QLabel("Resolution:"))
+        hbox_settings.addWidget(QLabel("Res:"))
         self.combo_res = QComboBox()
         self.combo_res.addItems(["1K", "2K", "4K"])
+        self.combo_res.setFixedWidth(70)
         hbox_settings.addWidget(self.combo_res)
         
-        self.check_logs = QCheckBox("Save Metadata Logs (.txt)")
+        hbox_settings.addWidget(QLabel("  Ratio:"))
+        self.combo_ratio = QComboBox()
+        self.combo_ratio.addItems(["Auto", "Manual"])
+        self.combo_ratio.setFixedWidth(100)
+        hbox_settings.addWidget(self.combo_ratio)
+        
+        self.check_logs = QCheckBox("Logs")
         self.check_logs.setChecked(True)
         hbox_settings.addWidget(self.check_logs)
         hbox_settings.addStretch()
@@ -432,6 +501,7 @@ class TabBatch(QWidget):
         config_helper.set_value("input_path", self.entry_in.text().strip())
         config_helper.set_value("output_path", self.entry_out.text().strip())
         config_helper.set_value("resolution", self.combo_res.currentText())
+        config_helper.set_value("aspect_ratio", self.combo_ratio.currentText())
         config_helper.set_value("generate_logs", self.check_logs.isChecked())
 
     def load_settings(self):
@@ -440,6 +510,7 @@ class TabBatch(QWidget):
         self.entry_in.setText(config.get("input_path", ""))
         self.entry_out.setText(config.get("output_path", ""))
         self.combo_res.setCurrentText(config.get("resolution", "1K"))
+        self.combo_ratio.setCurrentText(config.get("aspect_ratio", "Auto"))
         self.check_logs.setChecked(config.get("generate_logs", True))
 
     def start_process(self):
@@ -464,7 +535,8 @@ class TabBatch(QWidget):
         # Create and start worker
         self.worker = BatchWorker(
             key, in_path, self.entry_out.text().strip(),
-            self.combo_res.currentText(), self.MODEL_ID, self.check_logs.isChecked(),
+            self.combo_res.currentText(), self.combo_ratio.currentText(),
+            self.MODEL_ID, self.check_logs.isChecked(),
             parent=self
         )
         self.worker.log_signal.connect(self.status_box.append)
@@ -507,138 +579,127 @@ class TabBatch(QWidget):
         input_dir = Path(input_path)
         valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
         
-        # Scan images in root folder
-        grid_safe = []
-        needs_crop = []
-        
+        # Mapping to closest resolution buckets
+        optimized_plan = []
+        target_quality = self.combo_res.currentText()
+
         for img_file in input_dir.iterdir():
             if img_file.suffix.lower() in valid_exts:
                 try:
                     with Image.open(img_file) as img:
                         w, h = img.size
-                        if w % 64 == 0 and h % 64 == 0:
-                            grid_safe.append((img_file.name, w, h))
-                        else:
-                            needs_crop.append((img_file.name, w, h))
+                        curr_ratio = w / h
+                        
+                        # Find closest bucket ratio
+                        def parse_ratio(r_str):
+                            p = r_str.split(':')
+                            return int(p[0]) / int(p[1])
+                        
+                        best_ratio_key = min(RESOLUTION_TABLE.keys(), key=lambda r: abs(curr_ratio - parse_ratio(r)))
+                        target_w, target_h = RESOLUTION_TABLE[best_ratio_key][target_quality]
+                        
+                        already_optimized = (w == target_w and h == target_h)
+                        optimized_plan.append({
+                            'name': img_file.name,
+                            'current': (w, h),
+                            'path': img_file,
+                            'target': (target_w, target_h),
+                            'ratio': best_ratio_key,
+                            'optimized': already_optimized
+                        })
                 except Exception as e:
                     self.validator_report.append(f"⚠️ Error reading {img_file.name}: {e}")
         
         # Store results
         self.scan_results = {
             'input_dir': input_dir,
-            'grid_safe': grid_safe,
-            'needs_crop': needs_crop
+            'plan': optimized_plan
         }
         
         # Generate report
         report = "=" * 50 + "\n"
-        report += "📊 GRID VALIDATION REPORT (64px)\n"
+        report += f"📊 OPTIMIZATION REPORT ({target_quality})\n"
         report += "=" * 50 + "\n\n"
         
-        total = len(grid_safe) + len(needs_crop)
-        report += f"Total Images: {total}\n"
-        report += f"✅ Grid-Safe: {len(grid_safe)}\n"
-        report += f"⚠️  Need Crop: {len(needs_crop)}\n\n"
+        needs_work = [p for p in optimized_plan if not p['optimized']]
+        is_ready = [p for p in optimized_plan if p['optimized']]
         
-        if grid_safe:
-            report += "✅ GRID-SAFE IMAGES:\n"
-            for name, w, h in grid_safe[:5]:  # Show first 5
-                report += f"  • {name} ({w}×{h})\n"
-            if len(grid_safe) > 5:
-                report += f"  ... and {len(grid_safe) - 5} more\n"
+        report += f"Total Images: {len(optimized_plan)}\n"
+        report += f"✅ Perfect: {len(is_ready)}\n"
+        report += f"⚙️ To Optimize: {len(needs_work)}\n\n"
+        
+        if needs_work:
+            report += "⚙️ PENDING OPTIMIZATIONS:\n"
+            for p in needs_work[:10]:
+                report += f"  • {p['name']}: {p['current'][0]}×{p['current'][1]} → {p['target'][0]}×{p['target'][1]} ({p['ratio']})\n"
+            if len(needs_work) > 10:
+                report += f"  ... and {len(needs_work) - 10} more\n"
             report += "\n"
         
-        if needs_crop:
-            report += "⚠️  IMAGES NEEDING CROP:\n"
-            for name, w, h in needs_crop[:10]:  # Show first 10
-                new_w = (w // 64) * 64
-                new_h = (h // 64) * 64
-                report += f"  • {name} ({w}×{h}) → ({new_w}×{new_h})\n"
-            if len(needs_crop) > 10:
-                report += f"  ... and {len(needs_crop) - 10} more\n"
-            report += "\n"
+        if is_ready:
+            report += "✅ ALREADY OPTIMIZED:\n"
+            for p in is_ready[:5]:
+                report += f"  • {p['name']} ({p['target'][0]}×{p['target'][1]})\n"
         
         report += "=" * 50 + "\n"
-        if needs_crop:
-            report += "💡 Click 'AUTO-CROP ALL' to process images\n"
+        if needs_work:
+            report += "💡 Click 'OPTIMIZE FOR NANO BANANA PRO' to prepare images\n"
         else:
-            report += "✅ All images are grid-safe!\n"
+            report += "✅ All images are bucket-perfect!\n"
         
         self.validator_report.setText(report)
-        
-        # Enable auto-crop button if needed
-        self.btn_autocrop.setEnabled(len(needs_crop) > 0 or len(grid_safe) > 0)
+        self.btn_crop.setEnabled(len(optimized_plan) > 0)
 
     def auto_crop_images(self):
-        """Auto-crop images to 64px grid and save to _cropped folder"""
+        """Optimize images to official Imagen buckets via Aspect Fill + Center Crop"""
         if not self.scan_results:
-            self.validator_report.setText("❌ ERROR: Please scan images first!")
+            self.validator_report.setText("❌ ERROR: Please analyze images first!")
             return
         
         input_dir = self.scan_results['input_dir']
-        grid_safe = self.scan_results['grid_safe']
-        needs_crop = self.scan_results['needs_crop']
+        plan = self.scan_results['plan']
         
-        # Create _cropped folder
-        cropped_dir = input_dir / "_cropped"
+        # Create optimized folder
+        cropped_dir = input_dir / "optimized"
         cropped_dir.mkdir(exist_ok=True)
         
         self.validator_report.append("\n" + "=" * 50)
-        self.validator_report.append("✂️ STARTING AUTO-CROP PROCESS...")
-        self.validator_report.append("=" * 50 + "\n")
+        self.validator_report.append(f"🚀 OPTIMIZING FOR BATCH AI...")
         
         processed = 0
         errors = 0
         
-        # Copy grid-safe images
-        for name, w, h in grid_safe:
+        for p in plan:
+            if p['optimized']: continue
             try:
-                src = input_dir / name
-                dst = cropped_dir / name
-                with Image.open(src) as img:
-                    img.save(dst)
-                self.validator_report.append(f"📋 Copied: {name}")
+                with Image.open(p['path']) as img:
+                    # Smart Optimization: Scale to fill -> Center Crop (ImageOps.fit does this perfectly)
+                    # This ensures that if aspect ratio is already correct, no cropping happens (just resize)
+                    # And if not, it crops evenly from center.
+                    target_w, target_h = p['target']
+                    
+                    # Convert to RGB to avoid issues with RGBA/P modes during complex resizing if needed
+                    if img.mode != 'RGB':
+                        img = img.convert('RGB')
+                        
+                    # ImageOps.fit implements "Scale then Crop" logic
+                    new_img = ImageOps.fit(img, (target_w, target_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+                    
+                    save_path = cropped_dir / f"{p['name'].rsplit('.', 1)[0]}_optimized.{p['name'].split('.')[-1]}"
+                    # Save with high quality
+                    new_img.save(save_path, quality=95, subsampling=0)
+                
+                self.validator_report.append(f"✨ Optimized: {p['name']} → {p['target'][0]}×{p['target'][1]} ({p['ratio']})")
                 processed += 1
             except Exception as e:
-                self.validator_report.append(f"❌ Error copying {name}: {e}")
-                errors += 1
-        
-        # Crop non-aligned images
-        for name, old_w, old_h in needs_crop:
-            try:
-                src = input_dir / name
-                dst = cropped_dir / name
-                
-                # Calculate new dimensions (grid-safe)
-                new_w = (old_w // 64) * 64
-                new_h = (old_h // 64) * 64
-                
-                # Calculate center crop coordinates
-                left = (old_w - new_w) // 2
-                top = (old_h - new_h) // 2
-                right = left + new_w
-                bottom = top + new_h
-                
-                # Crop and save
-                with Image.open(src) as img:
-                    cropped = img.crop((left, top, right, bottom))
-                    cropped.save(dst)
-                
-                self.validator_report.append(f"✂️ Cropped: {name} ({old_w}×{old_h}) → ({new_w}×{new_h})")
-                processed += 1
-            except Exception as e:
-                self.validator_report.append(f"❌ Error cropping {name}: {e}")
+                self.validator_report.append(f"❌ Error optimizing {p['name']}: {e}")
                 errors += 1
         
         # Final report
         self.validator_report.append("\n" + "=" * 50)
-        self.validator_report.append(f"✅ PROCESS COMPLETE!")
+        self.validator_report.append(f"✅ OPTIMIZATION COMPLETE!")
         self.validator_report.append(f"Processed: {processed} | Errors: {errors}")
         self.validator_report.append(f"Output: {cropped_dir}")
         self.validator_report.append("=" * 50)
         
-        # Update input path to _cropped folder
-        self.entry_in.setText(str(cropped_dir))
-        self.save_settings()
-        self.validator_report.append("\n💡 Input path updated to _cropped folder!")
-
+        self.validator_report.append("\n💡 Optimized images are ready and will be used as high-quality inputs.")
