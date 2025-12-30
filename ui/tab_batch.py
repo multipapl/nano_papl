@@ -198,6 +198,7 @@ class TabBatch(QWidget):
         super().__init__()
         self.worker = None
         self.MODEL_ID = "gemini-3-pro-image-preview"
+        self.scan_results = None  # Store scan results for auto-crop
         self._setup_ui()
         self.load_settings()
 
@@ -210,6 +211,61 @@ class TabBatch(QWidget):
         
         # 1. Config
         # 1. Config Block Removed (Now in Settings)
+        
+        # 1.5 Grid Validator (Collapsible)
+        grp_validator = QGroupBox("📋 Image Grid Validator (64px)")
+        grp_validator.setCheckable(True)
+        grp_validator.setChecked(False)  # Collapsed by default
+        layout_validator = QVBoxLayout()
+        
+        # Scan button
+        self.btn_scan = QPushButton("🔍 SCAN IMAGES")
+        self.btn_scan.setMinimumHeight(35)
+        self.btn_scan.setStyleSheet("""
+            QPushButton {
+                background-color: #0078d4;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #106ebe; }
+        """)
+        self.btn_scan.clicked.connect(self.scan_images)
+        layout_validator.addWidget(self.btn_scan)
+        
+        # Report area
+        self.validator_report = QTextEdit()
+        self.validator_report.setReadOnly(True)
+        self.validator_report.setMaximumHeight(120)
+        self.validator_report.setStyleSheet("""
+            font-family: Consolas;
+            font-size: 11px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            border: 1px solid #3d3d3d;
+        """)
+        self.validator_report.setPlaceholderText("Click 'SCAN IMAGES' to check grid alignment...")
+        layout_validator.addWidget(self.validator_report)
+        
+        # Auto-crop button
+        self.btn_autocrop = QPushButton("✂️ AUTO-CROP ALL")
+        self.btn_autocrop.setMinimumHeight(35)
+        self.btn_autocrop.setStyleSheet("""
+            QPushButton {
+                background-color: #2da44e;
+                color: white;
+                font-weight: bold;
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #2c974b; }
+            QPushButton:disabled { background-color: #444; color: #888; }
+        """)
+        self.btn_autocrop.clicked.connect(self.auto_crop_images)
+        self.btn_autocrop.setEnabled(False)
+        layout_validator.addWidget(self.btn_autocrop)
+        
+        grp_validator.setLayout(layout_validator)
+        left_layout.addWidget(grp_validator)
         
         # 2. Paths
         grp_paths = QGroupBox("Paths & Settings")
@@ -439,3 +495,150 @@ class TabBatch(QWidget):
         
         if Path(out_path).exists():
             self.lbl_output.setPixmap(QPixmap(out_path))
+
+    def scan_images(self):
+        """Scan images in input folder for 64px grid alignment"""
+        input_path = self.entry_in.text().strip()
+        
+        if not input_path or not Path(input_path).exists():
+            self.validator_report.setText("❌ ERROR: Please select a valid input folder first!")
+            return
+        
+        input_dir = Path(input_path)
+        valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+        
+        # Scan images in root folder
+        grid_safe = []
+        needs_crop = []
+        
+        for img_file in input_dir.iterdir():
+            if img_file.suffix.lower() in valid_exts:
+                try:
+                    with Image.open(img_file) as img:
+                        w, h = img.size
+                        if w % 64 == 0 and h % 64 == 0:
+                            grid_safe.append((img_file.name, w, h))
+                        else:
+                            needs_crop.append((img_file.name, w, h))
+                except Exception as e:
+                    self.validator_report.append(f"⚠️ Error reading {img_file.name}: {e}")
+        
+        # Store results
+        self.scan_results = {
+            'input_dir': input_dir,
+            'grid_safe': grid_safe,
+            'needs_crop': needs_crop
+        }
+        
+        # Generate report
+        report = "=" * 50 + "\n"
+        report += "📊 GRID VALIDATION REPORT (64px)\n"
+        report += "=" * 50 + "\n\n"
+        
+        total = len(grid_safe) + len(needs_crop)
+        report += f"Total Images: {total}\n"
+        report += f"✅ Grid-Safe: {len(grid_safe)}\n"
+        report += f"⚠️  Need Crop: {len(needs_crop)}\n\n"
+        
+        if grid_safe:
+            report += "✅ GRID-SAFE IMAGES:\n"
+            for name, w, h in grid_safe[:5]:  # Show first 5
+                report += f"  • {name} ({w}×{h})\n"
+            if len(grid_safe) > 5:
+                report += f"  ... and {len(grid_safe) - 5} more\n"
+            report += "\n"
+        
+        if needs_crop:
+            report += "⚠️  IMAGES NEEDING CROP:\n"
+            for name, w, h in needs_crop[:10]:  # Show first 10
+                new_w = (w // 64) * 64
+                new_h = (h // 64) * 64
+                report += f"  • {name} ({w}×{h}) → ({new_w}×{new_h})\n"
+            if len(needs_crop) > 10:
+                report += f"  ... and {len(needs_crop) - 10} more\n"
+            report += "\n"
+        
+        report += "=" * 50 + "\n"
+        if needs_crop:
+            report += "💡 Click 'AUTO-CROP ALL' to process images\n"
+        else:
+            report += "✅ All images are grid-safe!\n"
+        
+        self.validator_report.setText(report)
+        
+        # Enable auto-crop button if needed
+        self.btn_autocrop.setEnabled(len(needs_crop) > 0 or len(grid_safe) > 0)
+
+    def auto_crop_images(self):
+        """Auto-crop images to 64px grid and save to _cropped folder"""
+        if not self.scan_results:
+            self.validator_report.setText("❌ ERROR: Please scan images first!")
+            return
+        
+        input_dir = self.scan_results['input_dir']
+        grid_safe = self.scan_results['grid_safe']
+        needs_crop = self.scan_results['needs_crop']
+        
+        # Create _cropped folder
+        cropped_dir = input_dir / "_cropped"
+        cropped_dir.mkdir(exist_ok=True)
+        
+        self.validator_report.append("\n" + "=" * 50)
+        self.validator_report.append("✂️ STARTING AUTO-CROP PROCESS...")
+        self.validator_report.append("=" * 50 + "\n")
+        
+        processed = 0
+        errors = 0
+        
+        # Copy grid-safe images
+        for name, w, h in grid_safe:
+            try:
+                src = input_dir / name
+                dst = cropped_dir / name
+                with Image.open(src) as img:
+                    img.save(dst)
+                self.validator_report.append(f"📋 Copied: {name}")
+                processed += 1
+            except Exception as e:
+                self.validator_report.append(f"❌ Error copying {name}: {e}")
+                errors += 1
+        
+        # Crop non-aligned images
+        for name, old_w, old_h in needs_crop:
+            try:
+                src = input_dir / name
+                dst = cropped_dir / name
+                
+                # Calculate new dimensions (grid-safe)
+                new_w = (old_w // 64) * 64
+                new_h = (old_h // 64) * 64
+                
+                # Calculate center crop coordinates
+                left = (old_w - new_w) // 2
+                top = (old_h - new_h) // 2
+                right = left + new_w
+                bottom = top + new_h
+                
+                # Crop and save
+                with Image.open(src) as img:
+                    cropped = img.crop((left, top, right, bottom))
+                    cropped.save(dst)
+                
+                self.validator_report.append(f"✂️ Cropped: {name} ({old_w}×{old_h}) → ({new_w}×{new_h})")
+                processed += 1
+            except Exception as e:
+                self.validator_report.append(f"❌ Error cropping {name}: {e}")
+                errors += 1
+        
+        # Final report
+        self.validator_report.append("\n" + "=" * 50)
+        self.validator_report.append(f"✅ PROCESS COMPLETE!")
+        self.validator_report.append(f"Processed: {processed} | Errors: {errors}")
+        self.validator_report.append(f"Output: {cropped_dir}")
+        self.validator_report.append("=" * 50)
+        
+        # Update input path to _cropped folder
+        self.entry_in.setText(str(cropped_dir))
+        self.save_settings()
+        self.validator_report.append("\n💡 Input path updated to _cropped folder!")
+
