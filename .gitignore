@@ -18,10 +18,12 @@ dist/
 assets/*.ico
 
 # Local Documentation & Reports
-docs/
+# docs/
+
 
 # Local Scripts
-scripts/AI_AutoCrop.jsx
+# 
+
 
 # Tests
 tests/
