@@ -77,6 +77,7 @@ class BatchWorker(QThread):
     finished_signal = Signal()
     error_signal = Signal(str)
     preview_signal = Signal(str, str, str) # input_path, output_path, prompt_text
+    time_estimate_signal = Signal(str)
 
     def __init__(self, api_key, input_path, output_path, resolution, ratio, model_id, check_logs, parent=None):
         super().__init__(parent)
@@ -110,7 +111,39 @@ class BatchWorker(QThread):
                 self.log_signal.emit("WARNING: No project folders found (checked for prompts.md).")
             
             valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
-            
+
+            # --- Pre-calculation Phase ---
+            self.log_signal.emit("Calculating workload...")
+            total_operations = 0
+            # We need to peek into projects to count valid images * prompts
+            # This logic mirrors the nested loops below but only counts
+            for project_dir in projects:
+                if self.stop_requested: break
+                
+                # Logic must match the processing loop to be accurate
+                image_source_dir = project_dir / "optimized"
+                if not image_source_dir.exists():
+                    image_source_dir = project_dir
+                
+                prompt_path = project_dir / self.PROMPT_FILENAME
+                prompts_data = self.parse_markdown_prompts(prompt_path)
+                if not prompts_data: continue
+
+                images = [f for f in image_source_dir.iterdir() if f.suffix.lower() in valid_exts]
+                total_operations += len(images) * len(prompts_data)
+
+            self.log_signal.emit(f"Total tasks found: {total_operations}")
+            processed_count = 0
+            start_time = None 
+
+            if total_operations == 0:
+                 self.log_signal.emit("Nothing to process.")
+                 self.finished_signal.emit()
+                 return # Exit early
+
+            start_time = datetime.datetime.now()
+
+            # --- Processing Phase ---
             for project_dir in projects:
                 if self.stop_requested: break
 
@@ -198,8 +231,32 @@ class BatchWorker(QThread):
                                 for part in response.parts:
                                     if part.inline_data:
                                         ts = datetime.datetime.now().strftime("%H%M%S")
-                                        base_name = f"{img_path.stem}_{data['title']}_{ts}"
+                                        
+                                        # Resolution Validation
+                                        # Compare input image size vs generated image size
+                                        # Note: We already have img_path opened before, but let's just use what we have
+                                        # We need to read the generated image to know its size without saving first
+                                        import io
+                                        generated_img = Image.open(io.BytesIO(part.inline_data.data))
+                                        gen_w, gen_h = generated_img.size
+                                        
+                                        # Get input size (we can optimize by reading it once outside loop, 
+                                        # but doing it here is safer for context)
+                                        with Image.open(img_path) as input_img:
+                                            in_w, in_h = input_img.size
+                                        
+                                        # Check and Mark
+                                        is_diff = (gen_w != in_w) or (gen_h != in_h)
+                                        suffix = "_diff" if is_diff else ""
+                                        
+                                        if is_diff:
+                                            self.log_signal.emit(f"    [WARN] Resolution Mismatch! Input: {in_w}x{in_h}, Output: {gen_w}x{gen_h}")
+                                        
+                                        base_name = f"{img_path.stem}_{data['title']}_{ts}{suffix}"
                                         out_file_path = image_out_dir / f"{base_name}.png"
+                                        
+                                        # Save directly from bytes (don't re-encode to avoid quality loss if not needed, 
+                                        # though PIL save is fine too)
                                         out_file_path.write_bytes(part.inline_data.data)
                                         
                                         if self.check_logs:
@@ -214,6 +271,34 @@ class BatchWorker(QThread):
                         except Exception as e:
                             self.log_signal.emit(f"    [ERROR] API Call failed for {img_path.name}: {e}")
                             print(f"DEBUG: Failed prompt:\n{data['prompt']}")
+                        
+                        # --- Progress & ETA Update ---
+                        processed_count += 1
+                        
+                        # Custom Linear Progress 0-100
+                        progress_val = (processed_count / total_operations) * 100
+                        self.progress_signal.emit(progress_val)
+                        
+                        # ETA Calculation
+                        if start_time:
+                            elapsed = (datetime.datetime.now() - start_time).total_seconds()
+                            if processed_count > 0:
+                                avg_time_per_item = elapsed / processed_count
+                                remaining_items = total_operations - processed_count
+                                eta_seconds = int(avg_time_per_item * remaining_items)
+                                
+                                # Format ETA
+                                if eta_seconds < 60:
+                                    eta_str = f"{eta_seconds}s"
+                                elif eta_seconds < 3600:
+                                    m, s = divmod(eta_seconds, 60)
+                                    eta_str = f"{m}m {s}s"
+                                else:
+                                    h, rem = divmod(eta_seconds, 3600)
+                                    m, s = divmod(rem, 60)
+                                    eta_str = f"{h}h {m}m"
+                                
+                                self.time_estimate_signal.emit(f"ETA: {eta_str}")
 
             if self.stop_requested:
                 self.log_signal.emit("--- PROCESS STOPPED BY USER ---")
@@ -377,6 +462,12 @@ class TabBatch(QWidget):
         self.progress = QProgressBar()
         self.progress.setValue(0)
         left_layout.addWidget(self.progress)
+        
+        # ETA Label
+        self.lbl_eta = QLabel("ETA: --:--")
+        self.lbl_eta.setAlignment(Qt.AlignCenter)
+        self.lbl_eta.setStyleSheet("font-weight: bold; color: #888; margin-bottom: 5px;")
+        left_layout.addWidget(self.lbl_eta)
 
         self.status_box = QTextEdit()
         self.status_box.setReadOnly(True)
@@ -526,7 +617,9 @@ class TabBatch(QWidget):
         self.status_box.clear()
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
+        self.btn_stop.setEnabled(True)
         self.progress.setValue(0)
+        self.lbl_eta.setText("ETA: Calculating...")
         
         self.lbl_input.clear(); self.lbl_input.setText("Processing...")
         self.lbl_output.clear(); self.lbl_output.setText("Waiting...")
@@ -541,6 +634,7 @@ class TabBatch(QWidget):
         )
         self.worker.log_signal.connect(self.status_box.append)
         self.worker.progress_signal.connect(self.progress.setValue)
+        self.worker.time_estimate_signal.connect(self.lbl_eta.setText)
         self.worker.finished_signal.connect(self.on_finished)
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker.error_signal.connect(lambda e: self.status_box.append(f"CRITICAL ERROR: {e}"))
@@ -557,6 +651,7 @@ class TabBatch(QWidget):
     def on_finished(self):
         self.btn_start.setEnabled(True)
         self.btn_stop.setEnabled(False)
+        self.lbl_eta.setText("ETA: Done")
         self.worker = None
 
     def update_preview(self, in_path, out_path, prompt):
@@ -579,36 +674,53 @@ class TabBatch(QWidget):
         input_dir = Path(input_path)
         valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
         
+        # --- Project Detection Logic (Mirrors BatchWorker) ---
+        projects = []
+        PROMPT_FILENAME = "prompts.md"
+        
+        if (input_dir / PROMPT_FILENAME).exists():
+            projects = [input_dir]
+        else:
+            projects = [d for d in input_dir.iterdir() if d.is_dir()]
+        
+        if not projects:
+             self.validator_report.setText("⚠️ No project folders found (checked for prompts.md or subfolders).")
+             return
+
         # Mapping to closest resolution buckets
         optimized_plan = []
         target_quality = self.combo_res.currentText()
-
-        for img_file in input_dir.iterdir():
-            if img_file.suffix.lower() in valid_exts:
-                try:
-                    with Image.open(img_file) as img:
-                        w, h = img.size
-                        curr_ratio = w / h
-                        
-                        # Find closest bucket ratio
-                        def parse_ratio(r_str):
-                            p = r_str.split(':')
-                            return int(p[0]) / int(p[1])
-                        
-                        best_ratio_key = min(RESOLUTION_TABLE.keys(), key=lambda r: abs(curr_ratio - parse_ratio(r)))
-                        target_w, target_h = RESOLUTION_TABLE[best_ratio_key][target_quality]
-                        
-                        already_optimized = (w == target_w and h == target_h)
-                        optimized_plan.append({
-                            'name': img_file.name,
-                            'current': (w, h),
-                            'path': img_file,
-                            'target': (target_w, target_h),
-                            'ratio': best_ratio_key,
-                            'optimized': already_optimized
-                        })
-                except Exception as e:
-                    self.validator_report.append(f"⚠️ Error reading {img_file.name}: {e}")
+        
+        for project_dir in projects:
+             # Find images (exclude internal 'optimized' folders if possible, but standard is root images)
+             # We only scan the project root for source images
+             for img_file in project_dir.iterdir():
+                if img_file.suffix.lower() in valid_exts and img_file.is_file():
+                    try:
+                        with Image.open(img_file) as img:
+                            w, h = img.size
+                            curr_ratio = w / h
+                            
+                            # Find closest bucket ratio
+                            def parse_ratio(r_str):
+                                p = r_str.split(':')
+                                return int(p[0]) / int(p[1])
+                            
+                            best_ratio_key = min(RESOLUTION_TABLE.keys(), key=lambda r: abs(curr_ratio - parse_ratio(r)))
+                            target_w, target_h = RESOLUTION_TABLE[best_ratio_key][target_quality]
+                            
+                            already_optimized = (w == target_w and h == target_h)
+                            optimized_plan.append({
+                                'name': img_file.name,
+                                'current': (w, h),
+                                'path': img_file,
+                                'project_dir': project_dir, # Keep track of parent project
+                                'target': (target_w, target_h),
+                                'ratio': best_ratio_key,
+                                'optimized': already_optimized
+                            })
+                    except Exception as e:
+                        self.validator_report.append(f"⚠️ Error reading {project_dir.name}/{img_file.name}: {e}")
         
         # Store results
         self.scan_results = {
@@ -624,7 +736,7 @@ class TabBatch(QWidget):
         needs_work = [p for p in optimized_plan if not p['optimized']]
         is_ready = [p for p in optimized_plan if p['optimized']]
         
-        report += f"Total Images: {len(optimized_plan)}\n"
+        report += f"Total Images: {len(optimized_plan)} (across {len(projects)} subprojects)\n"
         report += f"✅ Perfect: {len(is_ready)}\n"
         report += f"⚙️ To Optimize: {len(needs_work)}\n\n"
         
@@ -659,9 +771,10 @@ class TabBatch(QWidget):
         input_dir = self.scan_results['input_dir']
         plan = self.scan_results['plan']
         
-        # Create optimized folder
-        cropped_dir = input_dir / "optimized"
-        cropped_dir.mkdir(exist_ok=True)
+        
+        # Create optimized folder (We do this per project now, inside loop)
+        # cropped_dir = input_dir / "optimized" 
+        # cropped_dir.mkdir(exist_ok=True)
         
         self.validator_report.append("\n" + "=" * 50)
         self.validator_report.append(f"🚀 OPTIMIZING FOR BATCH AI...")
@@ -685,6 +798,11 @@ class TabBatch(QWidget):
                     # ImageOps.fit implements "Scale then Crop" logic
                     new_img = ImageOps.fit(img, (target_w, target_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
                     
+                    # Save to project-specific optimized folder
+                    project_dir = p.get('project_dir', input_dir) # Fallback if key missing (robustness)
+                    cropped_dir = project_dir / "optimized"
+                    cropped_dir.mkdir(exist_ok=True)
+
                     save_path = cropped_dir / f"{p['name'].rsplit('.', 1)[0]}_optimized.{p['name'].split('.')[-1]}"
                     # Save with high quality
                     new_img.save(save_path, quality=95, subsampling=0)
@@ -699,7 +817,7 @@ class TabBatch(QWidget):
         self.validator_report.append("\n" + "=" * 50)
         self.validator_report.append(f"✅ OPTIMIZATION COMPLETE!")
         self.validator_report.append(f"Processed: {processed} | Errors: {errors}")
-        self.validator_report.append(f"Output: {cropped_dir}")
+        self.validator_report.append(f"Check 'optimized' folders in each project.")
         self.validator_report.append("=" * 50)
         
         self.validator_report.append("\n💡 Optimized images are ready and will be used as high-quality inputs.")

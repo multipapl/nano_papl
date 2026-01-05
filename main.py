@@ -18,7 +18,7 @@ class NanoPaplApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Nano Papl v1.1 | AI Archviz Automation")
+        self.setWindowTitle("Nano Papl v1.2 | AI Archviz Automation")
         self.setWindowIcon(QIcon(get_resource_path(os.path.join("assets", "icon.png"))))
         self.resize(1200, 900)
 
