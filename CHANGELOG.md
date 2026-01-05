@@ -1,24 +1,24 @@
 # Changelog
 
-Всі помітні зміни у проекті будуть фіксуватися у цьому файлі.
+All notable changes to this project will be documented in this file.
 
 ## [1.2.1] - 2026-01-05
-### Додано
-- Новий Git-воркфлоу: перехід на гілки `dev` (для роботи) та `main` (для чистих релізів).
-- Гайд з використання Git у проекті ([docs/git_workflow.md](docs/git_workflow.md)).
-- Файл `CHANGELOG.md` для обліку версій.
+### Added
+- New Git workflow: multi-branch strategy with `dev` (working branch) and `main` (clean releases).
+- Comprehensive Git workflow guide ([docs/git_workflow.md](docs/git_workflow.md)).
+- Project `CHANGELOG.md` to track version history.
 
-### Змінено
-- Стандартизовано назви EXE-файлів у папці `dist/` (формат `NanoPapl_vX.X.X.exe`).
-- Оновлено `.gitignore`: папка `docs/` тепер ігнорується для GitHub, але залишається локально.
+### Changed
+- Standardized executable naming in `dist/` folder (format: `NanoPapl_vX.X.X.exe`).
+- Updated `.gitignore`: `docs/` folder is now ignored on GitHub but kept locally.
 
 ---
 
 ## [1.2.0] - 2026-01-05
-### Додано
-- **ETA для Batch Generation**: тепер програма показує прогнозований час завершення обробки.
-- **Resolution Validation**: автоматичне маркування зображень суфіксом `_diff`, якщо їх роздільна здатність відрізняється від вхідної.
+### Added
+- **Batch Generation ETA**: The application now displays the estimated time of arrival for batch processing.
+- **Resolution Validation**: Automatic marking of generated images with the `_diff` suffix if their resolution differs from the input.
 
-### Виправлено
-- **Progress Bar**: виправлено помилку відображення прогресу під час пакетної генерації.
-- **Оптимізація підпапок**: виправлено логіку роботи з підпапками проектів (створення папки `optimized` всередині проекту та використання зображень з неї).
+### Fixed
+- **Progress Bar**: Fixed the display bug during batch generation.
+- **Subfolder Optimization**: Improved subproject folder handling (creating the `optimized` directory within the project and utilizing its contents correctly).
