@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image, ImageOps
 from google import genai
 from google.genai import types
-from utils import config_helper
+from utils import config_helper, image_utils, prompt_parser
 
 # Empirically Verified Resolution Table (Truth Table)
 RESOLUTION_TABLE = {
@@ -317,29 +317,10 @@ class BatchWorker(QThread):
         self.stop_requested = True
 
     def get_smart_ratio(self, image_path):
-        with Image.open(image_path) as img:
-            w, h = img.size
-            target = w / h
-            # Official Imagen 3 / Gemini Ratios
-            common = [
-                (1, 1), (16, 9), (9, 16), (4, 3), (3, 4), 
-                (3, 2), (2, 3), (5, 4), (4, 5), (21, 9)
-            ]
-            best = min(common, key=lambda r: abs(target - r[0]/r[1]))
-            return f"{best[0]}:{best[1]}"
+        return image_utils.get_smart_ratio(image_path)
 
     def parse_markdown_prompts(self, file_path):
-        p = Path(file_path)
-        if not p.exists(): return []
-        content = p.read_text(encoding="utf-8")
-        sections = re.split(r'\n###\s+', content)
-        parsed = []
-        for section in sections[1:]:
-            lines = section.strip().split('\n')
-            title = re.sub(r'[\\/*?:"<>|]', "", lines[0].strip().replace(" ", "_"))
-            body = "\n".join(lines[1:]).strip()
-            if body: parsed.append({"title": title, "prompt": body})
-        return parsed
+        return prompt_parser.parse_markdown_prompts(file_path)
 
 
 class TabBatch(QWidget):
@@ -348,7 +329,7 @@ class TabBatch(QWidget):
         self.worker = None
         self.MODEL_ID = "gemini-3-pro-image-preview"
         # Empirically Verified Resolution Table (Truth Table)
-        self.MODEL_ID = "gemini-3-pro-image-preview"
+
         self.scan_results = None  # Store scan results for optimization
         self._setup_ui()
         self.load_settings()
@@ -619,7 +600,7 @@ class TabBatch(QWidget):
         self.status_box.clear()
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
-        self.btn_stop.setEnabled(True)
+
         self.progress.setValue(0)
         self.lbl_eta.setText("ETA: Calculating...")
         

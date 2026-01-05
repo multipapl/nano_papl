@@ -1,8 +1,11 @@
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-    QScrollArea, QCheckBox, QComboBox, QGroupBox, QFileDialog, QTextEdit
+    QScrollArea, QCheckBox, QComboBox, QGroupBox, QFileDialog, QTextEdit,
+    QTreeWidget, QTreeWidgetItem, QHeaderView, QFrame, QInputDialog, QMessageBox
 )
 from PySide6.QtCore import Qt
+import os
+import json
 from pathlib import Path
 from core.generator import PromptGenerator
 from utils import config_helper
@@ -17,14 +20,37 @@ class TabConstructor(QWidget):
         # Main Layout
         main_layout = QVBoxLayout(self)
         
-        # Reset Button Bar
+        # Reset & Presets Button Bar
         top_bar = QHBoxLayout()
+        
+        top_bar.addWidget(QLabel("Presets:"))
+        self.combo_presets = QComboBox()
+        self.combo_presets.setMinimumWidth(200)
+        top_bar.addWidget(self.combo_presets)
+        
+        btn_load_p = QPushButton("Load")
+        btn_load_p.clicked.connect(self.on_load_preset)
+        top_bar.addWidget(btn_load_p)
+        
+        btn_save_p = QPushButton("Save As...")
+        btn_save_p.clicked.connect(self.on_save_preset)
+        top_bar.addWidget(btn_save_p)
+        
+        btn_del_p = QPushButton("Delete")
+        btn_del_p.setStyleSheet("color: #e74c3c;")
+        btn_del_p.clicked.connect(self.on_delete_preset)
+        top_bar.addWidget(btn_del_p)
+
         top_bar.addStretch()
+        
         btn_reset = QPushButton("Reset All Defaults")
         btn_reset.setStyleSheet("background-color: #d32f2f; color: white; border-radius: 4px; padding: 5px 10px;")
         btn_reset.clicked.connect(self.global_reset)
         top_bar.addWidget(btn_reset)
         main_layout.addLayout(top_bar)
+        
+        self.PRESETS_FILE = config_helper.PRESETS_FILE
+        self.refresh_presets_list()
 
         # Scroll Area
         scroll = QScrollArea()
@@ -100,58 +126,78 @@ class TabConstructor(QWidget):
         grp_scene.setLayout(l_scene)
         self.content_layout.addWidget(grp_scene)
 
-        # --- Seasons ---
-        grp_seasons = QGroupBox("Seasons & Atmosphere")
-        l_seasons = QVBoxLayout()
-        self.season_rows = {}
+        # --- Lighting Definitions (Global) ---
+        grp_lighting_defs = QGroupBox("Global Lighting Definitions")
+        l_defs = QVBoxLayout()
+        self.light_defs = {} # Store line edits: {name: QLineEdit}
         
+        default_lights = self.data.get("lighting", {})
+        
+        for l_name, l_desc in default_lights.items():
+            row = QHBoxLayout()
+            row.addWidget(QLabel(f"{l_name}:"))
+            entry = QLineEdit(l_desc)
+            self.create_reset_btn(entry, "lighting", l_name, row)
+            row.insertWidget(1, entry)
+            l_defs.addLayout(row)
+            self.light_defs[l_name] = entry
+            
+        grp_lighting_defs.setLayout(l_defs)
+        self.content_layout.addWidget(grp_lighting_defs)
+
+        # --- Seasons & Lighting Hierarchy ---
+        grp_tree = QGroupBox("Seasons Lighting Hierarchy")
+        l_tree = QVBoxLayout()
+        
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Selection / Name", "Description / Details", "Atmosphere / Extras"])
+        self.tree.setColumnWidth(0, 250)
+        self.tree.header().setSectionResizeMode(0, QHeaderView.Interactive)
+        self.tree.header().setSectionResizeMode(1, QHeaderView.Stretch)
+        self.tree.header().setSectionResizeMode(2, QHeaderView.Stretch)
+
         for s_name, s_desc in self.data.get("seasons", {}).items():
-            row = QHBoxLayout()
-            chk = QCheckBox(s_name)
-            chk.setFixedWidth(100)
+            # Top Level: Season
+            item_season = QTreeWidgetItem(self.tree)
             
-            e_desc = QLineEdit(s_desc)
-            self.create_reset_btn(e_desc, "seasons", s_name, row)
+            # Col 0: Checkbox + Name
+            chk_season = QCheckBox(s_name)
+            self.tree.setItemWidget(item_season, 0, chk_season)
             
-            e_atmos = QLineEdit(self.data.get("default_atmospheres", {}).get(s_name, ""))
-            self.create_reset_btn(e_atmos, "default_atmospheres", s_name, row)
+            # Col 1: Description
+            entry_s_desc = QLineEdit(s_desc)
+            self.tree.setItemWidget(item_season, 1, entry_s_desc)
+            
+            # Col 2: Atmosphere
+            default_atmos = self.data.get("default_atmospheres", {}).get(s_name, "")
+            entry_atmos = QLineEdit(default_atmos)
+            entry_atmos.setPlaceholderText("Atmosphere...")
+            self.tree.setItemWidget(item_season, 2, entry_atmos)
+            
+            # Store references in item for easy access later
+            item_season.setData(0, Qt.UserRole, {"type": "season", "name": s_name, "chk": chk_season, "desc": entry_s_desc, "atmos": entry_atmos})
 
-            row.insertWidget(0, chk)
-            row.insertWidget(2, e_desc)
-            row.insertWidget(4, e_atmos)
-            
-            l_seasons.addLayout(row)
-            self.season_rows[s_name] = {"chk": chk, "desc": e_desc, "atmos": e_atmos}
-            
-        grp_seasons.setLayout(l_seasons)
-        self.content_layout.addWidget(grp_seasons)
+            # Children: Lighting (Simplified)
+            for l_name in default_lights.keys():
+                item_light = QTreeWidgetItem(item_season)
+                
+                # Col 0: Checkbox + Name
+                chk_light = QCheckBox(l_name)
+                chk_light.setChecked(True) # Default all ON
+                self.tree.setItemWidget(item_light, 0, chk_light)
+                
+                # Col 1: Empty (Description moved to Global)
+                
+                # Col 2: Xmas Checkbox
+                chk_xmas = QCheckBox("Xmas Variant")
+                chk_xmas.setStyleSheet("color: #e74c3c")
+                self.tree.setItemWidget(item_light, 2, chk_xmas)
+                
+                item_light.setData(0, Qt.UserRole, {"type": "light", "name": l_name, "chk": chk_light, "xmas": chk_xmas})
 
-        # --- Lighting ---
-        grp_light = QGroupBox("Lighting Scenarios")
-        l_light = QVBoxLayout()
-        self.light_rows = {}
-        
-        for l_name, l_desc in self.data.get("lighting", {}).items():
-            row = QHBoxLayout()
-            chk = QCheckBox(l_name)
-            chk.setChecked(True)
-            chk.setFixedWidth(120)
-            
-            chk_xmas = QCheckBox("Xmas")
-            chk_xmas.setStyleSheet("color: #e74c3c")
-            
-            e_desc = QLineEdit(l_desc)
-            self.create_reset_btn(e_desc, "lighting", l_name, row)
-            
-            row.insertWidget(0, chk)
-            row.insertWidget(1, chk_xmas)
-            row.insertWidget(3, e_desc)
-            
-            l_light.addLayout(row)
-            self.light_rows[l_name] = {"chk": chk, "xmas": chk_xmas, "desc": e_desc}
-            
-        grp_light.setLayout(l_light)
-        self.content_layout.addWidget(grp_light)
+        l_tree.addWidget(self.tree)
+        grp_tree.setLayout(l_tree)
+        self.content_layout.addWidget(grp_tree)
 
         # --- Global Settings ---
         grp_global = QGroupBox("Global Settings")
@@ -195,6 +241,38 @@ class TabConstructor(QWidget):
         self.text_base.setText(f"{t} {c}")
 
     def get_current_settings(self):
+        # Traverse Tree
+        curr_seasons = {}
+        
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item_s = root.child(i)
+            data_s = item_s.data(0, Qt.UserRole)
+            s_name = data_s["name"]
+            
+            # Get Children (Lights)
+            curr_lights = {}
+            for j in range(item_s.childCount()):
+                item_l = item_s.child(j)
+                data_l = item_l.data(0, Qt.UserRole)
+                l_name = data_l["name"]
+                
+                # Use Global Description
+                global_desc = self.light_defs[l_name].text()
+                
+                curr_lights[l_name] = {
+                    "is_active": data_l["chk"].isChecked(),
+                    "desc": global_desc,
+                    "is_xmas": data_l["xmas"].isChecked()
+                }
+
+            curr_seasons[s_name] = {
+                "is_active": data_s["chk"].isChecked(),
+                "season_text": data_s["desc"].text(),
+                "atmos": data_s["atmos"].text(),
+                "lights": curr_lights
+            }
+
         return {
             "project_name": self.entry_name.text(),
             "context": self.entry_ctx.text(),
@@ -204,24 +282,17 @@ class TabConstructor(QWidget):
             "xmas_desc": self.entry_xmas.text(),
             "global_rules": self.entry_rules.text(),
             "camera": self.entry_cam.text(),
-            "active_seasons": {
-                n: {
-                    "is_active": r["chk"].isChecked(),
-                    "season_text": r["desc"].text(),
-                    "atmos": r["atmos"].text()
-                } for n, r in self.season_rows.items()
-            },
-            "active_lights": {
-                n: {
-                    "is_active": r["chk"].isChecked(),
-                    "desc": r["desc"].text(),
-                    "is_xmas": r["xmas"].isChecked()
-                } for n, r in self.light_rows.items()
-            }
+            "active_seasons": curr_seasons, 
+            # active_lights is no longer global, it's nested.
+            # We keep structure compatible with generator update.
         }
 
     def save_state(self):
         settings = self.get_current_settings()
+        
+        # Extract Global Defs for separate saving
+        global_defs = {name: entry.text() for name, entry in self.light_defs.items()}
+        
         full_config = config_helper.load_config()
         full_config.update({
             "constructor_project_name": settings["project_name"],
@@ -232,57 +303,160 @@ class TabConstructor(QWidget):
             "constructor_global_rules": settings["global_rules"],
             "constructor_camera": settings["camera"],
             "constructor_seasons": settings["active_seasons"],
-            "constructor_lights": settings["active_lights"]
+            "constructor_global_lights_defs": global_defs 
+            # Note: We save global defs separately so they persist even if a specific season/light combo wasn't active
         })
         config_helper.save_config(full_config)
 
     def load_state(self):
         config = config_helper.load_config()
-        self.entry_name.setText(config.get("constructor_project_name", "New_Project"))
-        self.entry_ctx.setText(config.get("constructor_context", "New Zeeland"))
-        self.combo_type.setCurrentText(config.get("constructor_input_type", "Viewport"))
-        self.combo_cat.setCurrentText(config.get("constructor_scene_type", "Exterior"))
         
-        self.entry_xmas.setText(config.get("constructor_xmas_desc", ""))
-        self.entry_rules.setText(config.get("constructor_global_rules", ""))
-        self.entry_cam.setText(config.get("constructor_camera", ""))
+        # Map config keys to preset-style keys for apply_preset_data
+        mapped_data = {
+            "project_name": config.get("constructor_project_name", "New_Project"),
+            "context": config.get("constructor_context", "New Zeeland"),
+            "input_type": config.get("constructor_input_type", "Viewport"),
+            "scene_type": config.get("constructor_scene_type", "Exterior"),
+            "xmas_desc": config.get("constructor_xmas_desc", ""),
+            "global_rules": config.get("constructor_global_rules", ""),
+            "camera": config.get("constructor_camera", ""),
+            "global_lights_defs": config.get("constructor_global_lights_defs", {}),
+            "active_seasons": config.get("constructor_seasons", {})
+        }
         
-        saved_seasons = config.get("constructor_seasons", {})
-        for n, r in self.season_rows.items():
-            if n in saved_seasons:
-                s_data = saved_seasons[n]
-                r["chk"].setChecked(s_data.get("is_active", False))
-                r["desc"].setText(s_data.get("season_text", ""))
-                r["atmos"].setText(s_data.get("atmos", ""))
-        
-        saved_lights = config.get("constructor_lights", {})
-        for n, r in self.light_rows.items():
-            if n in saved_lights:
-                l_data = saved_lights[n]
-                r["chk"].setChecked(l_data.get("is_active", True))
-                r["desc"].setText(l_data.get("desc", ""))
-                r["xmas"].setChecked(l_data.get("is_xmas", False))
-        
-        self.update_base_text()
+        self.apply_preset_data(mapped_data)
 
     def global_reset(self):
-        # Implementation similar to previous logic but setting Qt widgets
         self.entry_name.setText("New_Project")
         self.entry_ctx.setText("New Zeeland")
         self.entry_xmas.setText(self.data.get("christmas_desc", ""))
         self.entry_rules.setText(self.data.get("global_rules", ""))
         self.entry_cam.setText(self.data.get("camera", ""))
         
-        for name, row in self.season_rows.items():
-            row["chk"].setChecked(False)
-            row["desc"].setText(self.data.get("seasons", {}).get(name, ""))
-            row["atmos"].setText(self.data.get("default_atmospheres", {}).get(name, ""))
+        # Reset Global Lighting Defs
+        default_lights_data = self.data.get("lighting", {})
+        for l_name, l_entry in self.light_defs.items():
+            l_entry.setText(default_lights_data.get(l_name, ""))
+
+        # Traverse Tree
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item_s = root.child(i)
+            data_s = item_s.data(0, Qt.UserRole)
+            s_name = data_s["name"]
             
-        for name, row in self.light_rows.items():
-            row["chk"].setChecked(True)
-            row["xmas"].setChecked(False)
-            row["desc"].setText(self.data.get("lighting", {}).get(name, ""))
+            # Reset Season
+            data_s["chk"].setChecked(False)
+            data_s["desc"].setText(self.data.get("seasons", {}).get(s_name, ""))
+            data_s["atmos"].setText(self.data.get("default_atmospheres", {}).get(s_name, ""))
             
+            # Reset Lights
+            for j in range(item_s.childCount()):
+                item_l = item_s.child(j)
+                data_l = item_l.data(0, Qt.UserRole)
+                l_name = data_l["name"]
+                
+                data_l["chk"].setChecked(True)
+                data_l["xmas"].setChecked(False)
+            
+        self.update_base_text()
+        self.save_state()
+
+    def refresh_presets_list(self):
+        self.combo_presets.clear()
+        presets = self._load_all_presets()
+        self.combo_presets.addItems(sorted(presets.keys()))
+
+    def _load_all_presets(self):
+        if os.path.exists(self.PRESETS_FILE):
+            try:
+                with open(self.PRESETS_FILE, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                return {}
+        return {}
+
+    def _save_all_presets(self, presets):
+        with open(self.PRESETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(presets, f, indent=4, ensure_ascii=False)
+
+    def on_save_preset(self):
+        name, ok = QInputDialog.getText(self, "Save Preset", "Enter preset name:")
+        if ok and name.strip():
+            presets = self._load_all_presets()
+            presets[name.strip()] = self.get_current_settings()
+            # Also include global defs in the preset for full restoration
+            presets[name.strip()]["global_lights_defs"] = {n: e.text() for n, e in self.light_defs.items()}
+            
+            self._save_all_presets(presets)
+            self.refresh_presets_list()
+            self.combo_presets.setCurrentText(name.strip())
+
+    def on_load_preset(self):
+        name = self.combo_presets.currentText()
+        if not name: return
+        
+        presets = self._load_all_presets()
+        if name in presets:
+            self.apply_preset_data(presets[name])
+
+    def on_delete_preset(self):
+        name = self.combo_presets.currentText()
+        if not name: return
+        
+        reply = QMessageBox.question(self, "Delete Preset", f"Are you sure you want to delete '{name}'?",
+                                   QMessageBox.Yes | QMessageBox.No)
+        if reply == QMessageBox.Yes:
+            presets = self._load_all_presets()
+            if name in presets:
+                del presets[name]
+                self._save_all_presets(presets)
+                self.refresh_presets_list()
+
+    def apply_preset_data(self, data):
+        # We refactor load_state logic here to apply external dict
+        self.entry_name.setText(data.get("project_name", "New_Project"))
+        self.entry_ctx.setText(data.get("context", ""))
+        self.combo_type.setCurrentText(data.get("input_type", "Viewport"))
+        self.combo_cat.setCurrentText(data.get("scene_type", "Exterior"))
+        
+        self.entry_xmas.setText(data.get("xmas_desc", ""))
+        self.entry_rules.setText(data.get("global_rules", ""))
+        self.entry_cam.setText(data.get("camera", ""))
+        
+        # Global Lighting Descriptions
+        saved_defs = data.get("global_lights_defs", {})
+        for l_name, l_entry in self.light_defs.items():
+            if l_name in saved_defs:
+                l_entry.setText(saved_defs[l_name])
+
+        saved_seasons = data.get("active_seasons", {})
+        
+        # Traverse Tree and Apply Checks
+        root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            item_s = root.child(i)
+            data_s = item_s.data(0, Qt.UserRole)
+            s_name = data_s["name"]
+            
+            if s_name in saved_seasons:
+                s_conf = saved_seasons[s_name]
+                data_s["chk"].setChecked(s_conf.get("is_active", False))
+                data_s["desc"].setText(s_conf.get("season_text", ""))
+                data_s["atmos"].setText(s_conf.get("atmos", ""))
+                
+                # Lights
+                saved_lights = s_conf.get("lights", {})
+                for j in range(item_s.childCount()):
+                    item_l = item_s.child(j)
+                    data_l = item_l.data(0, Qt.UserRole)
+                    l_name = data_l["name"]
+                    
+                    if l_name in saved_lights:
+                        l_conf = saved_lights[l_name]
+                        data_l["chk"].setChecked(l_conf.get("is_active", True))
+                        data_l["xmas"].setChecked(l_conf.get("is_xmas", False))
+        
         self.update_base_text()
         self.save_state()
 

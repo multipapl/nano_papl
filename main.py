@@ -10,7 +10,7 @@ from ui.tab_constructor import TabConstructor
 from ui.tab_batch import TabBatch
 from ui.tab_chat import TabChat
 from ui.tab_settings import TabSettings
-from ui.tab_settings import TabSettings
+
 # config_helper is imported inside tabs or main if needed for window geometry saving
 from utils.resource_helper import get_resource_path
 

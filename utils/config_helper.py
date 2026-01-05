@@ -2,9 +2,17 @@ import json
 import os
 import keyring
 
-CONFIG_FILE = "config.json"
+CONFIG_NAME = "config.json"
+PRESETS_NAME = "presets.json"
 SERVICE_NAME = "NanoPapl"
 KEY_NAME = "api_key"
+
+# AppData Storage
+APP_DATA_DIR = os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "NanoPapl")
+os.makedirs(APP_DATA_DIR, exist_ok=True)
+
+CONFIG_FILE = os.path.join(APP_DATA_DIR, CONFIG_NAME)
+PRESETS_FILE = os.path.join(APP_DATA_DIR, PRESETS_NAME)
 
 def save_config(data):
     """Зберігає словник з налаштуваннями у файл."""

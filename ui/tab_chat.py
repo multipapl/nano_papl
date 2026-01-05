@@ -149,8 +149,7 @@ class TabChat(QWidget):
         super().__init__()
         # self.MODEL_ID removed, reading from config dynamicly
         
-        # Init History with Config Path
-        
+
         # Init History with Config Path
         config = config_helper.load_config()
         default_root = Path(os.path.expanduser("~")) / "Documents" / "NanoPapl"

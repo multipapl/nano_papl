@@ -45,41 +45,57 @@ class PromptGenerator:
 
         content = f"### {project_name}\n\n"
 
-        active_seasons = settings.get("active_seasons", {})
-        active_lights = settings.get("active_lights", {})
+        active_seasons = settings.get("active_seasons", {}) # Now {Name: {is_active, ..., lights: {}}}
+        # Legacy fallback if needed or just new structure
+        
+        # New Structure Iteration
+        # active_seasons is dict: "Summer": { ... "lights": {...} }
+        
+        # We need to handle the case where "active_seasons" might be the old structure for a second
+        # But since we update the UI first, ensuring new structure is key.
+        # Actually, let's write robust code that expects the new structure as per plan.
+        
+        # Helper to write a block
+        def write_block(title, atmos, light_txt, is_xmas_variant=False):
+            res = f"### {title}\n{base}\n"
+            if ctx: res += f"- {ctx}\n"
+            
+            season_txt = s_data.get("season_text", s_name)
+            res += f"- {season_txt}\n- {atmos}\n"
+            
+            if light_txt:
+                res += f"- {light_txt}\n"
+            
+            if rules: res += f"- {rules}\n"
+            
+            # Xmas check for rules/additions if needed, currently just desc in title/atmos
+            
+            res += f"- {camera}\n\n"
+            return res
 
         for s_name, s_data in active_seasons.items():
             if not s_data.get("is_active"): continue
             
-            for l_name, l_data in active_lights.items():
+            # Season-specific atmosphere
+            s_atmos = s_data.get("atmos", "")
+            
+            # Iterate lights nested in this season
+            season_lights = s_data.get("lights", {})
+            
+            for l_name, l_data in season_lights.items():
                 if not l_data.get("is_active"): continue
                 
-                # Helper to write a block
-                def write_block(title, atmos):
-                    res = f"### {title}\n{base}\n"
-                    if ctx: res += f"- {ctx}\n"
-                    # We assume season text is standard or passed? 
-                    # In legacy it was pulling from UI entry which pulled from template or user edit.
-                    # We'll expect 'season_text' in s_data if possible, or just use name.
-                    # Looking at legacy: "- {s_data['season_txt'].get()}\n- {atmos}\n"
-                    season_txt = s_data.get("season_text", s_name)
-                    
-                    res += f"- {season_txt}\n- {atmos}\n"
-                    
-                    light_txt = l_data.get("desc", "")
-                    res += f"- {light_txt}\n"
-                    
-                    if rules: res += f"- {rules}\n"
-                    res += f"- {camera}\n\n"
-                    return res
-
-                # Normal generation
-                atmos_val = s_data.get("atmos", "")
-                content += write_block(f"{s_name} + {l_name}", atmos_val)
-
-                # Xmas variant
-                if s_name == "Winter" and l_data.get("is_xmas"):
-                    atmos_x = atmos_val.rstrip('.') + f". {xmas_text}"
-                    content += write_block(f"{s_name} + {l_name} + Xmas", atmos_x)
+                l_desc = l_data.get("desc", "")
+                is_xmas = l_data.get("is_xmas", False)
+                
+                # Standard Variant
+                content += write_block(f"{s_name} + {l_name}", s_atmos, l_desc)
+                
+                # Xmas Variant (if checked for this specific light/season combo)
+                if is_xmas:
+                    # Append Xmas desc to atmosphere or separate line? 
+                    # Previous logic: atmos.rstrip + xmas_text
+                    x_atmos = s_atmos.rstrip('.') + f". {xmas_text}"
+                    content += write_block(f"{s_name} + {l_name} + Xmas", x_atmos, l_desc, True)
 
         return content
