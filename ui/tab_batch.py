@@ -255,9 +255,11 @@ class BatchWorker(QThread):
                                         base_name = f"{img_path.stem}_{data['title']}_{ts}{suffix}"
                                         out_file_path = image_out_dir / f"{base_name}.png"
                                         
-                                        # Save directly from bytes (don't re-encode to avoid quality loss if not needed, 
-                                        # though PIL save is fine too)
-                                        out_file_path.write_bytes(part.inline_data.data)
+                                        # Save using PIL to ensure valid PNG format (DaVinci Resolve compatibility)
+                                        # This re-encodes the image, ensuring the header matches the .png extension
+                                        # even if the API returned a JPEG.
+                                        with Image.open(io.BytesIO(part.inline_data.data)) as img:
+                                            img.save(out_file_path, format="PNG")
                                         
                                         if self.check_logs:
                                             log_text = f"RATIO: {current_ratio}\nPROMPT:\n{data['prompt']}"
