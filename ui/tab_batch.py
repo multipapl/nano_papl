@@ -3,7 +3,7 @@ from PySide6.QtWidgets import (
     QProgressBar, QTextEdit, QFileDialog, QCheckBox, QComboBox, QGroupBox, QMenu,
     QFrame, QSizePolicy, QSplitter
 )
-from PySide6.QtCore import Qt, QThread, Signal, QObject, QUrl, QSize
+from PySide6.QtCore import Qt, QThread, Signal, QObject, QUrl, QSize, QDate
 from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QResizeEvent
 import datetime
 import math
@@ -78,14 +78,16 @@ class BatchWorker(QThread):
     error_signal = Signal(str)
     preview_signal = Signal(str, str, str) # input_path, output_path, prompt_text
     time_estimate_signal = Signal(str)
+    api_call_signal = Signal()
 
-    def __init__(self, api_key, input_path, output_path, resolution, ratio, model_id, check_logs, parent=None):
+    def __init__(self, api_key, input_path, output_path, resolution, ratio, output_format, model_id, check_logs, parent=None):
         super().__init__(parent)
         self.api_key = api_key
         self.input_path = Path(input_path)
         self.output_path = Path(output_path) if output_path else self.input_path / "_renders"
         self.resolution = resolution
         self.ratio = ratio
+        self.output_format = output_format
         self.model_id = model_id
         self.check_logs = check_logs
         self.stop_requested = False
@@ -158,7 +160,7 @@ class BatchWorker(QThread):
                 prompts_data = self.parse_markdown_prompts(prompt_path)
                 
                 if not prompts_data:
-                    self.log_signal.emit(f"Skipping '{project_dir.name}': Prompts missing.")
+                    self.log_signal.emit(f"Skipping '{project_dir.name}': Prompts file empty or missing valid prompt blocks.")
                     continue
                 
                 images = [f for f in image_source_dir.iterdir() if f.suffix.lower() in valid_exts]
@@ -252,14 +254,26 @@ class BatchWorker(QThread):
                                         if is_diff:
                                             self.log_signal.emit(f"    [WARN] Resolution Mismatch! Input: {in_w}x{in_h}, Output: {gen_w}x{gen_h}")
                                         
-                                        base_name = f"{img_path.stem}_{data['title']}_{ts}{suffix}"
-                                        out_file_path = image_out_dir / f"{base_name}.png"
+                                        # Filename Cleanup: Remove '_+_' or ' + ' artifacting
+                                        clean_title = data['title'].replace("_+_", "+").replace(" + ", "+")
+                                        base_name = f"{img_path.stem}_{clean_title}_{ts}{suffix}"
                                         
-                                        # Save using PIL to ensure valid PNG format (DaVinci Resolve compatibility)
-                                        # This re-encodes the image, ensuring the header matches the .png extension
-                                        # even if the API returned a JPEG.
+                                        # Determine Extension and Format
+                                        ext = ".png" if self.output_format == "PNG" else ".jpg"
+                                        save_format = "PNG" if self.output_format == "PNG" else "JPEG"
+                                        
+                                        out_file_path = image_out_dir / f"{base_name}{ext}"
+                                        
+                                        # Save logic
                                         with Image.open(io.BytesIO(part.inline_data.data)) as img:
-                                            img.save(out_file_path, format="PNG")
+                                            if self.output_format == "JPG":
+                                                img = img.convert("RGB") # Remove alpha for JPG
+                                                img.save(out_file_path, format=save_format, quality=95)
+                                            else:
+                                                img.save(out_file_path, format=save_format)
+                                        
+                                        # Increment API Counter
+                                        self.api_call_signal.emit()
                                         
                                         if self.check_logs:
                                             log_text = f"RATIO: {current_ratio}\nPROMPT:\n{data['prompt']}"
@@ -331,8 +345,10 @@ class TabBatch(QWidget):
         # Empirically Verified Resolution Table (Truth Table)
 
         self.scan_results = None  # Store scan results for optimization
+        self.api_limit = 250
         self._setup_ui()
         self.load_settings()
+        self.check_api_usage() # Init counter on load
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -431,6 +447,17 @@ class TabBatch(QWidget):
         self.combo_ratio.addItems(["Auto", "Manual"])
         self.combo_ratio.setFixedWidth(100)
         hbox_settings.addWidget(self.combo_ratio)
+
+        hbox_settings.addWidget(QLabel("  Fmt:"))
+        self.combo_fmt = QComboBox()
+        self.combo_fmt.addItems(["PNG", "JPG"])
+        self.combo_fmt.setFixedWidth(70)
+        hbox_settings.addWidget(self.combo_fmt)
+        
+        # API Counter Label
+        self.lbl_api_counter = QLabel("RDP: ...")
+        self.lbl_api_counter.setStyleSheet("color: #666; font-weight: bold; margin-left: 10px;")
+        hbox_settings.addWidget(self.lbl_api_counter)
         
         self.check_logs = QCheckBox("Logs")
         self.check_logs.setChecked(True)
@@ -576,6 +603,7 @@ class TabBatch(QWidget):
         config_helper.set_value("output_path", self.entry_out.text().strip())
         config_helper.set_value("resolution", self.combo_res.currentText())
         config_helper.set_value("aspect_ratio", self.combo_ratio.currentText())
+        config_helper.set_value("output_format", self.combo_fmt.currentText())
         config_helper.set_value("generate_logs", self.check_logs.isChecked())
 
     def load_settings(self):
@@ -585,6 +613,7 @@ class TabBatch(QWidget):
         self.entry_out.setText(config.get("output_path", ""))
         self.combo_res.setCurrentText(config.get("resolution", "1K"))
         self.combo_ratio.setCurrentText(config.get("aspect_ratio", "Auto"))
+        self.combo_fmt.setCurrentText(config.get("output_format", "PNG"))
         self.check_logs.setChecked(config.get("generate_logs", True))
 
     def start_process(self):
@@ -612,6 +641,7 @@ class TabBatch(QWidget):
         self.worker = BatchWorker(
             key, in_path, self.entry_out.text().strip(),
             self.combo_res.currentText(), self.combo_ratio.currentText(),
+            self.combo_fmt.currentText(),
             self.MODEL_ID, self.check_logs.isChecked(),
             parent=self
         )
@@ -622,6 +652,7 @@ class TabBatch(QWidget):
         self.worker.finished.connect(self.worker.deleteLater)
         self.worker.error_signal.connect(lambda e: self.status_box.append(f"CRITICAL ERROR: {e}"))
         self.worker.preview_signal.connect(self.update_preview)
+        self.worker.api_call_signal.connect(self.increment_api_usage)
         
         self.worker.start()
 
@@ -798,9 +829,45 @@ class TabBatch(QWidget):
         
         # Final report
         self.validator_report.append("\n" + "=" * 50)
+
+
         self.validator_report.append(f"✅ OPTIMIZATION COMPLETE!")
         self.validator_report.append(f"Processed: {processed} | Errors: {errors}")
         self.validator_report.append(f"Check 'optimized' folders in each project.")
         self.validator_report.append("=" * 50)
         
         self.validator_report.append("\n💡 Optimized images are ready and will be used as high-quality inputs.")
+
+    def check_api_usage(self):
+        """Checks daily API usage from config and updates UI"""
+        today_str = QDate.currentDate().toString(Qt.ISODate) # YYYY-MM-DD
+        usage_data = config_helper.get_value("api_usage", {})
+        
+        # Reset if new day
+        if usage_data.get("date") != today_str:
+            usage_data = {"date": today_str, "count": 0}
+            config_helper.set_value("api_usage", usage_data)
+        
+        count = usage_data.get("count", 0)
+        self._update_api_label(count)
+
+    def increment_api_usage(self):
+        """Increments the daily counter"""
+        today_str = QDate.currentDate().toString(Qt.ISODate)
+        usage_data = config_helper.get_value("api_usage", {})
+        
+        # Double check date in case it crossed midnight during run
+        if usage_data.get("date") != today_str:
+            usage_data = {"date": today_str, "count": 0}
+        
+        usage_data["count"] = usage_data.get("count", 0) + 1
+        config_helper.set_value("api_usage", usage_data)
+        
+        self._update_api_label(usage_data["count"])
+
+    def _update_api_label(self, count):
+        self.lbl_api_counter.setText(f"RDP: {count}/{self.api_limit}")
+        if count >= self.api_limit:
+            self.lbl_api_counter.setStyleSheet("color: #d32f2f; font-weight: bold; margin-left: 10px;") # Red
+        else:
+            self.lbl_api_counter.setStyleSheet("color: #2da44e; font-weight: bold; margin-left: 10px;") # Green

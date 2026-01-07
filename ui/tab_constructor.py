@@ -162,6 +162,7 @@ class TabConstructor(QWidget):
             
             # Col 0: Checkbox + Name
             chk_season = QCheckBox(s_name)
+            chk_season.setChecked(True) # Default all ON (Fix: was unchecked)
             self.tree.setItemWidget(item_season, 0, chk_season)
             
             # Col 1: Description
@@ -469,6 +470,14 @@ class TabConstructor(QWidget):
             settings = self.get_current_settings()
             content = self.generator.generate_markdown(settings)
             
+            # Validation: Prevent empty prompt files
+            # The generator returns a title even if no blocks were added, 
+            # so we check if there are any actual prompt blocks (### Season + Light)
+            if content.count("###") < 2:
+                QMessageBox.warning(self, "No Prompts", "No active seasons or lights selected! Please check at least one season and one light in the hierarchy.")
+                self.btn_gen.setText("GENERATE PROMPTS MATRIX")
+                return
+
             out_file = Path(folder) / "prompts.md"
             out_file.write_text(content, encoding="utf-8")
             
