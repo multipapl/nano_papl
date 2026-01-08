@@ -1,11 +1,19 @@
 import json
 import os
 import keyring
+from core.logger import logger
 
 CONFIG_NAME = "config.json"
 PRESETS_NAME = "presets.json"
 SERVICE_NAME = "NanoPapl"
 KEY_NAME = "api_key"
+DEFAULT_SYSTEM_INSTRUCTION = (
+    "You are a Senior Architectural Visualization Art Director. "
+    "Critique images strictly on lighting, composition, materials, and photorealism. "
+    "Be technical, concise, and constructive. "
+    "If asked to generate an image, you CAN do it (if provided tool allows). "
+    "ALWAYS respect the requested Aspect Ratio and Resolution style in the prompt."
+)
 
 # AppData Storage
 APP_DATA_DIR = os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "NanoPapl")
@@ -72,7 +80,7 @@ def set_value(key, value):
                 save_config(config) # save_config filters it out
             return
         except Exception as e:
-            print(f"Keyring Error: {e}")
+            logger.error(f"Keyring Error: {e}")
             # Fallback? No, better warn? For now let's just proceed.
 
     config = load_config()

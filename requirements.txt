@@ -1,7 +1,8 @@
 PySide6
 Pillow
-google-genai
+requests
 keyring
+google-genai
 pytest
-pyinstaller
-
+pytest-cov
+pytest-qt

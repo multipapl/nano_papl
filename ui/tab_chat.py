@@ -1,3 +1,4 @@
+from ui.styles import Styles, Colors
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit, QPushButton, 
     QScrollArea, QLabel, QFrame, QSizePolicy, QFileDialog, QApplication,
@@ -5,9 +6,8 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QThread, Signal, QSize, QEvent
 from PySide6.QtGui import QPixmap, QIcon, QColor, QPalette, QPainter, QPainterPath
-from core.llm_client import LLMClient
-from google.genai import types # Still needed for types used in history for now, or just types use
-from utils import config_helper
+# LLMClient now used in worker only
+from core.utils import config_helper
 from core.history_manager import HistoryManager
 from pathlib import Path
 import datetime
@@ -18,13 +18,13 @@ class TypingBubble(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.NoFrame)
-        self.setStyleSheet("""
-            TypingBubble {
-                background-color: #383838;
+        self.setStyleSheet(f"""
+            TypingBubble {{
+                background-color: {Colors.BG_DARK};
                 border-radius: 15px;
                 border-bottom-left-radius: 2px;
-            }
-            QLabel { color: #aaa; font-style: italic; font-size: 12px; }
+            }}
+            QLabel {{ color: {Colors.TEXT_DIM}; font-style: italic; font-size: 12px; }}
         """)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(15, 8, 15, 8)
@@ -42,22 +42,22 @@ class MessageBubble(QFrame):
         
         # Style
         if is_user:
-            self.setStyleSheet("""
-                MessageBubble {
-                    background-color: #2b5c8a; /* Muted Blue */
+            self.setStyleSheet(f"""
+                MessageBubble {{
+                    background-color: {Colors.ACCENT}; /* Was Muted Blue, now consistent Accent */
                     border-radius: 15px;
                     border-bottom-right-radius: 2px;
-                }
-                QLabel { color: white; font-size: 13px; }
+                }}
+                QLabel {{ color: white; font-size: 13px; }}
             """)
         else:
-            self.setStyleSheet("""
-                MessageBubble {
-                    background-color: #383838; /* Dark Gray */
+            self.setStyleSheet(f"""
+                MessageBubble {{
+                    background-color: {Colors.BG_DARK};
                     border-radius: 15px;
                     border-bottom-left-radius: 2px;
-                }
-                QLabel { color: #e0e0e0; font-size: 13px; }
+                }}
+                QLabel {{ color: {Colors.TEXT}; font-size: 13px; }}
             """)
 
         # Images if attached
@@ -85,70 +85,15 @@ class MessageBubble(QFrame):
             layout.addWidget(lbl_text)
 
 # --- Worker Thread ---
-class ChatWorker(QThread):
-    response_signal = Signal(str, str) # Emits (text, image_path)
-    finished_signal = Signal()
-    error_signal = Signal(str)
-
-    def __init__(self, api_key, model_id, history, user_message, image_paths=None, res="1K", ratio="1:1", parent=None):
-        super().__init__(parent)
-        self.api_key = api_key
-        self.model_id = model_id
-        # provider handled by LLMClient internally now
-        self.history = history 
-        self.user_message = user_message
-        self.image_paths = image_paths or []
-        self.res = res
-        self.ratio = ratio
-        
-        self.system_instruction = (
-            "You are a Senior Architectural Visualization Art Director. "
-            "Critique images strictly on lighting, composition, materials, and photorealism. "
-            "Be technical, concise, and constructive. "
-            "If asked to generate an image, you CAN do it (if provided tool allows). "
-            "ALWAYS respect the requested Aspect Ratio and Resolution style in the prompt."
-        )
-
-    def run(self):
-        try:
-            client = LLMClient("gemini", self.model_id, self.api_key)
-            
-            # Call Generic Generate with Native Params
-            response_text, img_bytes = client.generate_chat(
-                self.history, 
-                self.user_message, 
-                self.image_paths, 
-                system_instruction=self.system_instruction,
-                resolution=self.res,
-                ratio=self.ratio
-            )
-            
-            response_image_path = ""
-            if img_bytes:
-                # Save to [Data Root]/Generated_Images
-                config = config_helper.load_config()
-                default_root = Path(os.path.expanduser("~")) / "Documents" / "NanoPapl"
-                root_path = Path(config.get("data_root", str(default_root)))
-                
-                out_dir = root_path / "Generated_Images"
-                out_dir.mkdir(parents=True, exist_ok=True)
-                
-                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                save_path = out_dir / f"gen_{ts}.png"
-                save_path.write_bytes(img_bytes)
-                response_image_path = str(save_path.absolute())
-
-            self.response_signal.emit(str(response_text).strip(), response_image_path)
-            self.finished_signal.emit()
-
-        except Exception as e:
-            self.error_signal.emit(str(e))
+from core.workers.chat_worker import ChatWorker
 
 class TabChat(QWidget):
     def __init__(self):
         super().__init__()
         # self.MODEL_ID removed, reading from config dynamicly
         
+        # Apply Global Shared Styles (Reset)
+        self.setStyleSheet(Styles.GLOBAL)
 
         # Init History with Config Path
         config = config_helper.load_config()
@@ -182,18 +127,13 @@ class TabChat(QWidget):
         # --- LEFT SIDEBAR ---
         sidebar = QWidget()
         sidebar.setFixedWidth(260)
-        sidebar.setStyleSheet("background-color: #1e1e1e; border-right: 1px solid #333;")
+        sidebar.setStyleSheet(f"background-color: {Colors.BG_DARKER}; border-right: 1px solid #333;")
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(10, 10, 10, 10)
 
         # New Chat Button
         btn_new = QPushButton("+ New Chat")
-        btn_new.setStyleSheet("""
-            QPushButton {
-                background-color: #2da44e; color: white; border-radius: 4px; padding: 8px; font-weight: bold;
-            }
-            QPushButton:hover { background-color: #2c974b; }
-        """)
+        btn_new.setStyleSheet(Styles.BTN_PRIMARY)
         btn_new.clicked.connect(self.start_new_chat)
         sidebar_layout.addWidget(btn_new)
         
@@ -233,7 +173,7 @@ class TabChat(QWidget):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setFrameShape(QFrame.NoFrame)
-        self.scroll_area.setStyleSheet("background-color: #1a1a1a;") 
+        self.scroll_area.setStyleSheet(f"background-color: {Colors.BG_DARK};") 
         
         self.chat_container = QWidget()
         self.chat_container.setStyleSheet("background-color: transparent;")
@@ -253,9 +193,9 @@ class TabChat(QWidget):
         self.btn_img_mode = QPushButton("🎨 Gen Image")
         self.btn_img_mode.setCheckable(True)
         self.btn_img_mode.setChecked(True)
-        self.btn_img_mode.setStyleSheet("""
-            QPushButton { background-color: #333; color: #888; border-radius: 4px; padding: 4px 8px; }
-            QPushButton:checked { background-color: #2b5c8a; color: white; }
+        self.btn_img_mode.setStyleSheet(f"""
+            QPushButton {{ background-color: #333; color: #888; border-radius: 4px; padding: 4px 8px; }}
+            QPushButton:checked {{ background-color: {Colors.ACCENT}; color: white; }}
         """)
         self.btn_img_mode.toggled.connect(self.toggle_img_mode)
         config_layout.addWidget(self.btn_img_mode)
@@ -274,12 +214,7 @@ class TabChat(QWidget):
         ])
         self.combo_model.setFixedWidth(220)
         # Revert to simple style to ensure clickability on Windows
-        self.combo_model.setStyleSheet("""
-            QComboBox {
-                background-color: #333; color: white; border: 1px solid #444; border-radius: 4px; padding: 4px;
-            }
-            QComboBox::drop-down { border: none; }
-        """)
+        self.combo_model.setStyleSheet(Styles.INPUT_FIELD.replace("padding: 8px;", "padding: 4px;")) # Mini tweak
         config_layout.addWidget(self.combo_model)
 
         line = QFrame()
@@ -291,21 +226,23 @@ class TabChat(QWidget):
         self.combo_ratio = QComboBox()
         self.combo_ratio.addItems(["1:1 (Square)", "16:9 (Landscape)", "4:3 (Photo)", "9:16 (Story)", "3:4 (Portrait)"])
         self.combo_ratio.setFixedWidth(120)
+        self.combo_ratio.setStyleSheet(Styles.INPUT_FIELD.replace("padding: 8px;", "padding: 4px;"))
         config_layout.addWidget(self.combo_ratio)
 
         config_layout.addWidget(QLabel("  Res:"))
         self.combo_res = QComboBox()
         self.combo_res.addItems(["1K (Standard)", "2K (Detailed)", "4K (Ultra High)"])
         self.combo_res.setFixedWidth(120)
+        self.combo_res.setStyleSheet(Styles.INPUT_FIELD.replace("padding: 8px;", "padding: 4px;"))
         config_layout.addWidget(self.combo_res)
 
         # Clear Chat Button
         btn_clear = QPushButton("🗑️")
         btn_clear.setFixedSize(30, 25)
         btn_clear.setToolTip("Clear History of this Chat")
-        btn_clear.setStyleSheet("""
-            QPushButton { background-color: #333; color: #888; border-radius: 4px; }
-            QPushButton:hover { background-color: #d32f2f; color: white; }
+        btn_clear.setStyleSheet(f"""
+            QPushButton {{ background-color: #333; color: #888; border-radius: 4px; }}
+            QPushButton:hover {{ background-color: {Colors.DANGER}; color: white; }}
         """)
         btn_clear.clicked.connect(self.clear_current_chat)
         config_layout.addWidget(btn_clear)
@@ -367,12 +304,13 @@ class TabChat(QWidget):
 
         self.btn_send = QPushButton("➤")
         self.btn_send.setFixedSize(40, 40)
-        self.btn_send.setStyleSheet("""
-            QPushButton { 
-                background-color: #2da44e; color: white; border-radius: 20px; font-size: 16px; padding-left: 3px;
-            }
-            QPushButton:hover { background-color: #2c974b; }
-            QPushButton:disabled { background-color: #444; color: #888; }
+        # Using Colors.PRIMARY but maintaining round shape
+        self.btn_send.setStyleSheet(f"""
+            QPushButton {{ 
+                background-color: {Colors.PRIMARY}; color: white; border-radius: 20px; font-size: 16px; padding-left: 3px;
+            }}
+            QPushButton:hover {{ background-color: #2c974b; }}
+            QPushButton:disabled {{ background-color: #444; color: #888; }}
         """)
         self.btn_send.clicked.connect(self.send_message)
         input_layout.addWidget(self.btn_send)
@@ -407,9 +345,9 @@ class TabChat(QWidget):
             btn_del.setFixedSize(24, 24)
             btn_del.setCursor(Qt.PointingHandCursor)
             btn_del.setToolTip("Delete Chat")
-            btn_del.setStyleSheet("""
-                QPushButton { background: transparent; color: #666; border: none; }
-                QPushButton:hover { color: #ff4444; background: #330000; border-radius: 4px; }
+            btn_del.setStyleSheet(f"""
+                QPushButton {{ background: transparent; color: #666; border: none; }}
+                QPushButton:hover {{ color: {Colors.DANGER}; background: #330000; border-radius: 4px; }}
             """)
             # Use closure to capture session ID
             btn_del.clicked.connect(lambda _, sid=sess["id"]: self.delete_session_by_id(sid))

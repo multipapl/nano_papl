@@ -1,18 +1,17 @@
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QLineEdit, QPushButton, 
-    QProgressBar, QTextEdit, QFileDialog, QCheckBox, QComboBox, QGroupBox, QMenu,
-    QFrame, QSizePolicy, QSplitter
+    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, 
+    QProgressBar, QTextEdit, QComboBox, QGroupBox, QSplitter, QSizePolicy, QMessageBox
 )
-from PySide6.QtCore import Qt, QThread, Signal, QObject, QUrl, QSize, QDate
-from PySide6.QtGui import QPixmap, QDragEnterEvent, QDropEvent, QResizeEvent
-import datetime
-import math
-import re
+from PySide6.QtCore import Qt, QDate
 from pathlib import Path
 from PIL import Image, ImageOps
-from google import genai
-from google.genai import types
-from utils import config_helper, image_utils, prompt_parser
+from core.utils import config_helper
+from ui.styles import Styles, Colors
+from ui.widgets.path_selector import PathSelectorWidget
+from ui.widgets.image_compare import ImageCompareWidget
+from ui.widgets.console_log import ConsoleLogWidget
+from core.workers.batch_worker import BatchWorker
+from ui.base_tab import BaseTab
 
 # Empirically Verified Resolution Table (Truth Table)
 RESOLUTION_TABLE = {
@@ -28,545 +27,158 @@ RESOLUTION_TABLE = {
     "21:9": {"1K": (1584, 672),  "2K": (3168, 1344), "4K": (6336, 2688)}
 }
 
-# --- Custom Widgets ---
-class DragDropLineEdit(QLineEdit):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setAcceptDrops(True)
-
-    def dragEnterEvent(self, event: QDragEnterEvent):
-        if event.mimeData().hasUrls():
-            event.acceptProposedAction()
-
-    def dropEvent(self, event: QDropEvent):
-        if event.mimeData().hasUrls():
-            url = event.mimeData().urls()[0]
-            path = url.toLocalFile()
-            if path:
-                self.setText(path)
-                event.acceptProposedAction()
-
-class ResizingLabel(QLabel):
-    def __init__(self, text="", parent=None):
-        super().__init__(text, parent)
-        self.setAlignment(Qt.AlignCenter)
-        self.setStyleSheet("border: 2px dashed #444; color: #666;")
-        self.setMinimumSize(250, 250)
-        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
-        self._pixmap = None
-
-    def setPixmap(self, pixmap):
-        self._pixmap = pixmap
-        super().setPixmap(self.scaledPixmap())
-
-    def resizeEvent(self, event: QResizeEvent):
-        if self._pixmap:
-            super().setPixmap(self.scaledPixmap())
-        super().resizeEvent(event)
-
-    def scaledPixmap(self):
-        if not self._pixmap: return QPixmap()
-        return self._pixmap.scaled(
-            self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation
-        )
-
-# --- Worker Thread ---
-class BatchWorker(QThread):
-    log_signal = Signal(str)
-    progress_signal = Signal(float)
-    finished_signal = Signal()
-    error_signal = Signal(str)
-    preview_signal = Signal(str, str, str) # input_path, output_path, prompt_text
-    time_estimate_signal = Signal(str)
-    api_call_signal = Signal()
-
-    def __init__(self, api_key, input_path, output_path, resolution, ratio, output_format, model_id, check_logs, parent=None):
-        super().__init__(parent)
-        self.api_key = api_key
-        self.input_path = Path(input_path)
-        self.output_path = Path(output_path) if output_path else self.input_path / "_renders"
-        self.resolution = resolution
-        self.ratio = ratio
-        self.output_format = output_format
-        self.model_id = model_id
-        self.check_logs = check_logs
-        self.stop_requested = False
-        self.PROMPT_FILENAME = "prompts.md"
-
-    def run(self):
-        self.log_signal.emit("--- INITIALIZING BATCH PROCESS ---")
-        try:
-            client = genai.Client(api_key=self.api_key)
-            
-            # --- Smart Folder Logic ---
-            projects = []
-            
-            # Check 1: Is the input path itself a project?
-            if (self.input_path / self.PROMPT_FILENAME).exists():
-                self.log_signal.emit(f"Detected Single Project Mode: {self.input_path.name}")
-                projects = [self.input_path]
-            else:
-                # Check 2: It's a root folder with subprojects
-                projects = [d for d in self.input_path.iterdir() if d.is_dir()]
-            
-            if not projects:
-                self.log_signal.emit("WARNING: No project folders found (checked for prompts.md).")
-            
-            valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
-
-            # --- Pre-calculation Phase ---
-            self.log_signal.emit("Calculating workload...")
-            total_operations = 0
-            # We need to peek into projects to count valid images * prompts
-            # This logic mirrors the nested loops below but only counts
-            for project_dir in projects:
-                if self.stop_requested: break
-                
-                # Logic must match the processing loop to be accurate
-                image_source_dir = project_dir / "optimized"
-                if not image_source_dir.exists():
-                    image_source_dir = project_dir
-                
-                prompt_path = project_dir / self.PROMPT_FILENAME
-                prompts_data = self.parse_markdown_prompts(prompt_path)
-                if not prompts_data: continue
-
-                images = [f for f in image_source_dir.iterdir() if f.suffix.lower() in valid_exts]
-                total_operations += len(images) * len(prompts_data)
-
-            self.log_signal.emit(f"Total tasks found: {total_operations}")
-            processed_count = 0
-            start_time = None 
-
-            if total_operations == 0:
-                 self.log_signal.emit("Nothing to process.")
-                 self.finished_signal.emit()
-                 return # Exit early
-
-            start_time = datetime.datetime.now()
-
-            # --- Processing Phase ---
-            for project_dir in projects:
-                if self.stop_requested: break
-
-                # Smart Image Source: Prefer 'optimized' folder if it exists
-                image_source_dir = project_dir / "optimized"
-                if not image_source_dir.exists():
-                    image_source_dir = project_dir
-                else:
-                    self.log_signal.emit(f"  [INFO] Using optimized images from 'optimized' subfolder")
-
-                prompt_path = project_dir / self.PROMPT_FILENAME
-                prompts_data = self.parse_markdown_prompts(prompt_path)
-                
-                if not prompts_data:
-                    self.log_signal.emit(f"Skipping '{project_dir.name}': Prompts file empty or missing valid prompt blocks.")
-                    continue
-                
-                images = [f for f in image_source_dir.iterdir() if f.suffix.lower() in valid_exts]
-                
-                # Setup Output Directory (Always use original project name)
-                project_out = self.output_path / project_dir.name
-                project_out.mkdir(parents=True, exist_ok=True)
-
-                for img_path in images:
-                    if self.stop_requested: break
-                    
-                    # Output subfolder for this specific image
-                    image_out_dir = project_out / img_path.stem.replace("_optimized", "")
-                    image_out_dir.mkdir(exist_ok=True)
-                    
-                    current_ratio = self.get_smart_ratio(img_path)
-                    img_data = img_path.read_bytes()
-
-                    for data in prompts_data:
-                        if self.stop_requested: break
-                        self.log_signal.emit(f"  [{project_dir.name}] {img_path.name} -> {data['title']}")
-                        
-                        try:
-                            # Dynamic MIME type detection
-                            mime_map = {
-                                '.png': 'image/png',
-                                '.jpg': 'image/jpeg',
-                                '.jpeg': 'image/jpeg',
-                                '.webp': 'image/webp'
-                            }
-                            detected_mime = mime_map.get(img_path.suffix.lower(), 'image/png')
-
-                            # Prepare config with Dynamic Aspect Ratio and Resolution
-                            # 2. Handle Aspect Ratio (Bucket-Perfect Detection)
-                            # 2. Handle Aspect Ratio
-                            # Auto (Native) -> Omitted (Model decides)
-                            # Manual -> Calculated from image (Smart)
-                            image_config_params = {"image_size": self.resolution}
-                            
-                            if self.ratio == "Manual":
-                                smart_ratio = self.get_smart_ratio(img_path)
-                                image_config_params["aspect_ratio"] = smart_ratio
-                                self.log_signal.emit(f"    [INFO] Manual Smart Ratio: {smart_ratio}")
-
-                            # 3. Build Config using Official Google AI Studio structure
-                            gen_config = types.GenerateContentConfig(
-                                response_modalities=["IMAGE", "TEXT"],
-                                image_config=types.ImageConfig(**image_config_params),
-                                temperature=0.4
-                            )
-
-                            # Use types.Content for formal structure
-                            contents = [
-                                types.Content(
-                                    role="user",
-                                    parts=[
-                                        types.Part.from_text(text=data['prompt']),
-                                        types.Part.from_bytes(data=img_data, mime_type=detected_mime)
-                                    ]
-                                )
-                            ]
-
-                            response = client.models.generate_content(
-                                model=self.model_id,
-                                contents=contents,
-                                config=gen_config
-                            )
-                            
-                            if response.parts:
-                                for part in response.parts:
-                                    if part.inline_data:
-                                        ts = datetime.datetime.now().strftime("%H%M%S")
-                                        
-                                        # Resolution Validation
-                                        # Compare input image size vs generated image size
-                                        # Note: We already have img_path opened before, but let's just use what we have
-                                        # We need to read the generated image to know its size without saving first
-                                        import io
-                                        generated_img = Image.open(io.BytesIO(part.inline_data.data))
-                                        gen_w, gen_h = generated_img.size
-                                        
-                                        # Get input size (we can optimize by reading it once outside loop, 
-                                        # but doing it here is safer for context)
-                                        with Image.open(img_path) as input_img:
-                                            in_w, in_h = input_img.size
-                                        
-                                        # Check and Mark
-                                        is_diff = (gen_w != in_w) or (gen_h != in_h)
-                                        suffix = "_diff" if is_diff else ""
-                                        
-                                        if is_diff:
-                                            self.log_signal.emit(f"    [WARN] Resolution Mismatch! Input: {in_w}x{in_h}, Output: {gen_w}x{gen_h}")
-                                        
-                                        # Filename Cleanup: Remove '_+_' or ' + ' artifacting
-                                        clean_title = data['title'].replace("_+_", "+").replace(" + ", "+")
-                                        base_name = f"{img_path.stem}_{clean_title}_{ts}{suffix}"
-                                        
-                                        # Determine Extension and Format
-                                        ext = ".png" if self.output_format == "PNG" else ".jpg"
-                                        save_format = "PNG" if self.output_format == "PNG" else "JPEG"
-                                        
-                                        out_file_path = image_out_dir / f"{base_name}{ext}"
-                                        
-                                        # Save logic
-                                        with Image.open(io.BytesIO(part.inline_data.data)) as img:
-                                            if self.output_format == "JPG":
-                                                img = img.convert("RGB") # Remove alpha for JPG
-                                                img.save(out_file_path, format=save_format, quality=95)
-                                            else:
-                                                img.save(out_file_path, format=save_format)
-                                        
-                                        # Increment API Counter
-                                        self.api_call_signal.emit()
-                                        
-                                        if self.check_logs:
-                                            log_text = f"RATIO: {current_ratio}\nPROMPT:\n{data['prompt']}"
-                                            (image_out_dir / f"{base_name}.txt").write_text(log_text, encoding="utf-8")
-                                        
-                                        self.log_signal.emit(f"    [OK] Saved: {base_name}.png")
-                                        
-                                        # Emit Preview Signal
-                                        self.preview_signal.emit(str(img_path), str(out_file_path), data['prompt'])
-
-                        except Exception as e:
-                            self.log_signal.emit(f"    [ERROR] API Call failed for {img_path.name}: {e}")
-                            print(f"DEBUG: Failed prompt:\n{data['prompt']}")
-                        
-                        # --- Progress & ETA Update ---
-                        processed_count += 1
-                        
-                        # Custom Linear Progress 0-100
-                        progress_val = (processed_count / total_operations) * 100
-                        self.progress_signal.emit(progress_val)
-                        
-                        # ETA Calculation
-                        if start_time:
-                            elapsed = (datetime.datetime.now() - start_time).total_seconds()
-                            if processed_count > 0:
-                                avg_time_per_item = elapsed / processed_count
-                                remaining_items = total_operations - processed_count
-                                eta_seconds = int(avg_time_per_item * remaining_items)
-                                
-                                # Format ETA
-                                if eta_seconds < 60:
-                                    eta_str = f"{eta_seconds}s"
-                                elif eta_seconds < 3600:
-                                    m, s = divmod(eta_seconds, 60)
-                                    eta_str = f"{m}m {s}s"
-                                else:
-                                    h, rem = divmod(eta_seconds, 3600)
-                                    m, s = divmod(rem, 60)
-                                    eta_str = f"{h}h {m}m"
-                                
-                                self.time_estimate_signal.emit(f"ETA: {eta_str}")
-
-            if self.stop_requested:
-                self.log_signal.emit("--- PROCESS STOPPED BY USER ---")
-            else:
-                self.log_signal.emit("--- BATCH PROCESS COMPLETED ---")
-                self.progress_signal.emit(100)
-
-        except Exception as e:
-            self.error_signal.emit(str(e))
-        
-        self.finished_signal.emit()
-
-    def request_stop(self):
-        self.stop_requested = True
-
-    def get_smart_ratio(self, image_path):
-        return image_utils.get_smart_ratio(image_path)
-
-    def parse_markdown_prompts(self, file_path):
-        return prompt_parser.parse_markdown_prompts(file_path)
-
-
-class TabBatch(QWidget):
+class TabBatch(BaseTab):
+    """
+    UI for batch image processing.
+    
+    Features:
+    - Path selection for Input (Images) and Output (Generation)
+    - Grid validation and auto-cropping/optimization
+    - Live progress tracking with ETA and logging
+    - Preview comparing input vs output
+    """
     def __init__(self):
         super().__init__()
         self.worker = None
         self.MODEL_ID = "gemini-3-pro-image-preview"
-        # Empirically Verified Resolution Table (Truth Table)
-
-        self.scan_results = None  # Store scan results for optimization
+        self.scan_results = None
         self.api_limit = 250
+        
+        self.setStyleSheet(Styles.GLOBAL + Styles.INPUT_FIELD + Styles.SECTION_HEADER + Styles.BTN_BASE)
+        
         self._setup_ui()
-        self.load_settings()
-        self.check_api_usage() # Init counter on load
+        self._register_fields()
+        self.load_state()
+        self.check_api_usage()
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(10, 10, 10, 10)
 
         # --- LEFT PANEL (Controls) ---
         left_widget = QWidget()
         left_layout = QVBoxLayout(left_widget)
+        left_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 1. Config
-        # 1. Config Block Removed (Now in Settings)
-        
-        # 1.5 Grid Validator
+        # 1. Grid Validator
         grp_validator = QGroupBox("📋 Image Grid Validator (64px)")
-        layout_validator = QVBoxLayout()
+        l_validator = QVBoxLayout()
         
-        # Scan button
-        self.btn_scan = QPushButton("🔍 ANALYZE FOR OPTIMIZATION")
-        self.btn_scan.setMinimumHeight(35)
-        self.btn_scan.setStyleSheet("""
-            QPushButton {
-                background-color: #0078d4;
-                color: white;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #106ebe; }
-        """)
+        h_val = QHBoxLayout()
+        self.btn_scan = QPushButton("🔍 ANALYZE")
+        self.btn_scan.setStyleSheet(Styles.BTN_ACCENT)
         self.btn_scan.clicked.connect(self.scan_images)
-        layout_validator.addWidget(self.btn_scan)
+        h_val.addWidget(self.btn_scan)
         
-        # Report area
-        self.validator_report = QTextEdit()
-        self.validator_report.setReadOnly(True)
-        self.validator_report.setMaximumHeight(120)
-        self.validator_report.setStyleSheet("""
-            font-family: Consolas;
-            font-size: 11px;
-            background-color: #1e1e1e;
-            color: #d4d4d4;
-            border: 1px solid #3d3d3d;
-        """)
-        self.validator_report.setPlaceholderText("Click 'SCAN IMAGES' to check grid alignment...")
-        layout_validator.addWidget(self.validator_report)
-        
-        # Optimization button
-        self.btn_crop = QPushButton("🍌 OPTIMIZE FOR NANO BANANA PRO")
-        self.btn_crop.setMinimumHeight(35)
-        self.btn_crop.setStyleSheet("""
-            QPushButton {
-                background-color: #2da44e;
-                color: white;
-                font-weight: bold;
-                border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #2c974b; }
-            QPushButton:disabled { background-color: #444; color: #888; }
-        """)
+        self.btn_crop = QPushButton("🍌 OPTIMIZE")
+        self.btn_crop.setStyleSheet(Styles.BTN_PRIMARY)
         self.btn_crop.clicked.connect(self.auto_crop_images)
         self.btn_crop.setEnabled(False)
-        layout_validator.addWidget(self.btn_crop)
+        h_val.addWidget(self.btn_crop)
+        l_validator.addLayout(h_val)
         
-        grp_validator.setLayout(layout_validator)
+        self.validator_report = QTextEdit()
+        self.validator_report.setReadOnly(True)
+        self.validator_report.setMaximumHeight(100)
+        self.validator_report.setStyleSheet(Styles.TEXT_AREA_CONSOLE)
+        self.validator_report.setPlaceholderText("Scan to check alignment...")
+        l_validator.addWidget(self.validator_report)
+        
+        grp_validator.setLayout(l_validator)
         left_layout.addWidget(grp_validator)
         
         # 2. Paths
         grp_paths = QGroupBox("Paths & Settings")
-        layout_paths = QGridLayout()
+        l_paths = QVBoxLayout() # Changed to VBox for widgets
+        l_paths.setSpacing(10)
+        
+        self.path_in = PathSelectorWidget("Input Root:", select_file=False)
+        l_paths.addWidget(self.path_in)
+        
+        self.path_out = PathSelectorWidget("Output Folder:", select_file=False)
+        l_paths.addWidget(self.path_out)
 
-        layout_paths.addWidget(QLabel("Input Root:"), 0, 0)
-        self.entry_in = DragDropLineEdit()
-        self.entry_in.setPlaceholderText("Drag folder here...")
-        self.add_context_menu(self.entry_in)
-        layout_paths.addWidget(self.entry_in, 0, 1)
-        btn_in = QPushButton("Browse")
-        btn_in.clicked.connect(lambda: self.select_path(self.entry_in))
-        layout_paths.addWidget(btn_in, 0, 2)
-
-        layout_paths.addWidget(QLabel("Output Folder:"), 1, 0)
-        self.entry_out = DragDropLineEdit()
-        self.add_context_menu(self.entry_out)
-        layout_paths.addWidget(self.entry_out, 1, 1)
-        btn_out = QPushButton("Browse")
-        btn_out.clicked.connect(lambda: self.select_path(self.entry_out))
-        layout_paths.addWidget(btn_out, 1, 2)
-
-        # Settings
-        hbox_settings = QHBoxLayout()
-        hbox_settings.addWidget(QLabel("Res:"))
+        # Settings Row
+        h_set = QHBoxLayout()
+        
+        h_set.addWidget(QLabel("Res:"))
         self.combo_res = QComboBox()
         self.combo_res.addItems(["1K", "2K", "4K"])
-        self.combo_res.setFixedWidth(70)
-        hbox_settings.addWidget(self.combo_res)
+        h_set.addWidget(self.combo_res)
         
-        hbox_settings.addWidget(QLabel("  Ratio:"))
+        h_set.addWidget(QLabel("Ratio:"))
         self.combo_ratio = QComboBox()
         self.combo_ratio.addItems(["Auto", "Manual"])
-        self.combo_ratio.setFixedWidth(100)
-        hbox_settings.addWidget(self.combo_ratio)
+        h_set.addWidget(self.combo_ratio)
 
-        hbox_settings.addWidget(QLabel("  Fmt:"))
+        h_set.addWidget(QLabel("Fmt:"))
         self.combo_fmt = QComboBox()
         self.combo_fmt.addItems(["PNG", "JPG"])
-        self.combo_fmt.setFixedWidth(70)
-        hbox_settings.addWidget(self.combo_fmt)
+        h_set.addWidget(self.combo_fmt)
         
-        # API Counter Label
         self.lbl_api_counter = QLabel("RDP: ...")
-        self.lbl_api_counter.setStyleSheet("color: #666; font-weight: bold; margin-left: 10px;")
-        hbox_settings.addWidget(self.lbl_api_counter)
+        self.lbl_api_counter.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-weight: bold; margin-left: 10px;")
+        h_set.addWidget(self.lbl_api_counter)
         
-        self.check_logs = QCheckBox("Logs")
-        self.check_logs.setChecked(True)
-        hbox_settings.addWidget(self.check_logs)
-        hbox_settings.addStretch()
-        
-        layout_paths.addLayout(hbox_settings, 2, 1, 1, 2)
-        grp_paths.setLayout(layout_paths)
+        h_set.addStretch()
+        l_paths.addLayout(h_set)
+        grp_paths.setLayout(l_paths)
         left_layout.addWidget(grp_paths)
 
-        # 3. Status
+        # 3. Status Log
+        self.log_widget = ConsoleLogWidget()
+        left_layout.addWidget(self.log_widget)
+        
+        # 4. Progress & ETA
+        h_prog = QHBoxLayout()
         self.progress = QProgressBar()
         self.progress.setValue(0)
-        left_layout.addWidget(self.progress)
+        h_prog.addWidget(self.progress)
         
-        # ETA Label
         self.lbl_eta = QLabel("ETA: --:--")
-        self.lbl_eta.setAlignment(Qt.AlignCenter)
-        self.lbl_eta.setStyleSheet("font-weight: bold; color: #888; margin-bottom: 5px;")
-        left_layout.addWidget(self.lbl_eta)
+        self.lbl_eta.setStyleSheet(f"font-weight: bold; color: {Colors.TEXT_MUTED};")
+        h_prog.addWidget(self.lbl_eta)
+        left_layout.addLayout(h_prog)
 
-        self.status_box = QTextEdit()
-        self.status_box.setReadOnly(True)
-        self.status_box.setStyleSheet("font-family: Consolas; font-size: 12px;")
-        left_layout.addWidget(self.status_box)
-
-        # 4. Buttons
-        hbox_btns = QHBoxLayout()
+        # 5. Buttons
+        h_btns = QHBoxLayout()
         self.btn_start = QPushButton("START PROCESSING")
         self.btn_start.setMinimumHeight(45)
-        self.btn_start.setStyleSheet("""
-            QPushButton {
-                background-color: #2da44e; /* GitHub/Apple Success Green */
-                color: white; 
-                font-weight: bold; 
-                font-size: 13px;
-                border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #2c974b; }
-            QPushButton:disabled { background-color: #444; color: #888; }
-        """)
+        self.btn_start.setStyleSheet(Styles.BTN_PRIMARY)
         self.btn_start.clicked.connect(self.start_process)
+        h_btns.addWidget(self.btn_start)
         
         self.btn_stop = QPushButton("STOP")
         self.btn_stop.setMinimumHeight(45)
-        self.btn_stop.setStyleSheet("""
-            QPushButton {
-                background-color: #d32f2f; /* Material Red 700 */
-                color: white; 
-                font-weight: bold; 
-                font-size: 13px;
-                border-radius: 4px;
-            }
-            QPushButton:hover { background-color: #c62828; }
-            QPushButton:disabled { background-color: #444; color: #888; }
-        """)
+        self.btn_stop.setStyleSheet(Styles.BTN_DANGER)
         self.btn_stop.clicked.connect(self.stop_process)
         self.btn_stop.setEnabled(False)
-
-        hbox_btns.addWidget(self.btn_start)
-        hbox_btns.addWidget(self.btn_stop)
-        left_layout.addLayout(hbox_btns)
+        h_btns.addWidget(self.btn_stop)
+        left_layout.addLayout(h_btns)
 
         # --- RIGHT PANEL (Preview) ---
         right_widget = QWidget()
         right_layout = QVBoxLayout(right_widget)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
         grp_preview = QGroupBox("Live Preview")
-        preview_inner = QVBoxLayout()
+        l_preview = QVBoxLayout()
         
-        # Image Area
-        img_layout = QHBoxLayout()
-        
-        # 1. Image Area (Expands)
-        img_layout = QHBoxLayout()
-        
-        self.lbl_input = ResizingLabel("Waiting...")
-        self.lbl_output = ResizingLabel("Waiting...")
-        
-        lbl_arrow = QLabel("➡")
-        lbl_arrow.setAlignment(Qt.AlignCenter)
-        lbl_arrow.setStyleSheet("font-size: 20px; font-weight: bold; color: #666;")
-        lbl_arrow.setFixedWidth(30)
-        
-        img_layout.addWidget(self.lbl_input)
-        img_layout.addWidget(lbl_arrow, 0, Qt.AlignVCenter)
-        img_layout.addWidget(self.lbl_output)
-        
-        preview_inner.addLayout(img_layout, 3) # Images take 60% height
+        # Image Comparison Widget
+        self.img_compare = ImageCompareWidget()
+        l_preview.addWidget(self.img_compare, 3) # Takes more space
 
-        # 2. Prompt Area (Fixed at bottom)
-        prompt_container = QWidget()
-        prompt_layout = QVBoxLayout(prompt_container)
-        prompt_layout.setContentsMargins(0, 10, 0, 0)
-        prompt_layout.setSpacing(2)
-
-        lbl_prompt = QLabel("Current Prompt:")
-        lbl_prompt.setStyleSheet("color: #888; font-size: 11px; font-weight: bold;")
-        prompt_layout.addWidget(lbl_prompt)
+        # Prompt Display
+        lbl_p = QLabel("Current Prompt:")
+        lbl_p.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: 11px; font-weight: bold;")
+        l_preview.addWidget(lbl_p)
 
         self.txt_prompt = QTextEdit()
         self.txt_prompt.setReadOnly(True)
-        # self.txt_prompt.setMaximumHeight(70) # Removed limitation
-        self.txt_prompt.setStyleSheet("background-color: #2b2b2b; color: #ccc; font-style: italic; border: 1px solid #3d3d3d; border-radius: 4px; padding: 4px;")
-        prompt_layout.addWidget(self.txt_prompt)
+        self.txt_prompt.setStyleSheet("background-color: #2b2b2b; color: #ccc; font-style: italic; border: 1px solid #3d3d3d;")
+        l_preview.addWidget(self.txt_prompt, 1)
         
-        preview_inner.addWidget(prompt_container, 2) # Prompt takes 40% height
-        
-        grp_preview.setLayout(preview_inner)
+        grp_preview.setLayout(l_preview)
         right_layout.addWidget(grp_preview)
 
         # --- COMBINE ---
@@ -576,81 +188,57 @@ class TabBatch(QWidget):
         splitter.setStretchFactor(0, 4)
         splitter.setStretchFactor(1, 6)
         
-        # Main layout wrapper to allow splitter to expand
-        splitter.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         main_layout.addWidget(splitter)
-
-    def add_context_menu(self, widget):
-        widget.setContextMenuPolicy(Qt.CustomContextMenu)
-        widget.customContextMenuRequested.connect(lambda pos: self.show_menu(widget, pos))
-
-    def show_menu(self, widget, pos):
-        menu = QMenu(self)
-        menu.addAction("Cut", widget.cut)
-        menu.addAction("Copy", widget.copy)
-        menu.addAction("Paste", widget.paste)
-        menu.exec(widget.mapToGlobal(pos))
-
-    def select_path(self, entry):
-        path = QFileDialog.getExistingDirectory(self, "Select Directory")
-        if path:
-            entry.setText(path)
-            self.save_settings()
+    
+    def _register_fields(self):
+        """Register all stateful widgets with BaseTab"""
+        self.register_field("input_path", self.path_in)
+        self.register_field("output_path", self.path_out)
+        self.register_field("resolution", self.combo_res)
+        self.register_field("aspect_ratio", self.combo_ratio)
+        self.register_field("output_format", self.combo_fmt)
 
     def save_settings(self):
-        # config_helper.set_value("api_key", ...) # Handled in Settings Tab now
-        config_helper.set_value("input_path", self.entry_in.text().strip())
-        config_helper.set_value("output_path", self.entry_out.text().strip())
-        config_helper.set_value("resolution", self.combo_res.currentText())
-        config_helper.set_value("aspect_ratio", self.combo_ratio.currentText())
-        config_helper.set_value("output_format", self.combo_fmt.currentText())
-        config_helper.set_value("generate_logs", self.check_logs.isChecked())
+        """Simplified - uses BaseTab's automated save"""
+        super().save_state()
 
-    def load_settings(self):
-        config = config_helper.load_config()
-        # self.entry_key.setText(...) # Handled in Settings Tab now
-        self.entry_in.setText(config.get("input_path", ""))
-        self.entry_out.setText(config.get("output_path", ""))
-        self.combo_res.setCurrentText(config.get("resolution", "1K"))
-        self.combo_ratio.setCurrentText(config.get("aspect_ratio", "Auto"))
-        self.combo_fmt.setCurrentText(config.get("output_format", "PNG"))
-        self.check_logs.setChecked(config.get("generate_logs", True))
+    def load_state(self):
+        """Simplified - uses BaseTab's automated load"""
+        super().load_state()
 
     def start_process(self):
-        # Read API Key via helper (handles keyring)
         key = config_helper.get_value("api_key", "")
-        in_path = self.entry_in.text().strip()
+        in_path = self.path_in.get_path()
+        out_path = self.path_out.get_path()
         
         if not key or not in_path:
-            self.status_box.append("[ERROR] Invalid API Key (check Settings tab) or Input Path")
+            self.log_widget.append_log("[ERROR] Invalid API Key or Input Path")
             return
 
         self.save_settings()
-        self.status_box.clear()
+        self.log_widget.clear_log()
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
-
         self.progress.setValue(0)
-        self.lbl_eta.setText("ETA: Calculating...")
+        self.lbl_eta.setText("ETA: ...")
         
-        self.lbl_input.clear(); self.lbl_input.setText("Processing...")
-        self.lbl_output.clear(); self.lbl_output.setText("Waiting...")
+        self.img_compare.clear()
         self.txt_prompt.clear()
 
-        # Create and start worker
+        # Create worker
         self.worker = BatchWorker(
-            key, in_path, self.entry_out.text().strip(),
+            key, in_path, out_path,
             self.combo_res.currentText(), self.combo_ratio.currentText(),
             self.combo_fmt.currentText(),
-            self.MODEL_ID, self.check_logs.isChecked(),
+            self.MODEL_ID, True, # logs always valid now
             parent=self
         )
-        self.worker.log_signal.connect(self.status_box.append)
+        self.worker.log_signal.connect(self.log_widget.append_log)
         self.worker.progress_signal.connect(self.progress.setValue)
         self.worker.time_estimate_signal.connect(self.lbl_eta.setText)
         self.worker.finished_signal.connect(self.on_finished)
         self.worker.finished.connect(self.worker.deleteLater)
-        self.worker.error_signal.connect(lambda e: self.status_box.append(f"CRITICAL ERROR: {e}"))
+        self.worker.error_signal.connect(lambda e: self.log_widget.append_log(f"CRITICAL ERROR: {e}"))
         self.worker.preview_signal.connect(self.update_preview)
         self.worker.api_call_signal.connect(self.increment_api_usage)
         
@@ -658,7 +246,7 @@ class TabBatch(QWidget):
 
     def stop_process(self):
         if self.worker:
-            self.status_box.append("!!! STOP REQUESTED. Finishing current task... !!!")
+            self.log_widget.append_log("!!! STOP REQUESTED !!!")
             self.worker.request_stop()
             self.btn_stop.setEnabled(False)
 
@@ -670,44 +258,34 @@ class TabBatch(QWidget):
 
     def update_preview(self, in_path, out_path, prompt):
         self.txt_prompt.setText(prompt)
-        
-        if Path(in_path).exists():
-            self.lbl_input.setPixmap(QPixmap(in_path))
-        
-        if Path(out_path).exists():
-            self.lbl_output.setPixmap(QPixmap(out_path))
+        self.img_compare.set_input(in_path)
+        self.img_compare.set_output(out_path)
 
     def scan_images(self):
-        """Scan images in input folder for 64px grid alignment"""
-        input_path = self.entry_in.text().strip()
-        
+        input_path = self.path_in.get_path()
         if not input_path or not Path(input_path).exists():
-            self.validator_report.setText("❌ ERROR: Please select a valid input folder first!")
+            self.validator_report.setText("❌ Select valid input folder!")
             return
         
+        # Reuse logic but keep it concise here or extract to Utils if repeated
+        # Keeping core logic here as requested to not over-engineer if unique
         input_dir = Path(input_path)
         valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
         
-        # --- Project Detection Logic (Mirrors BatchWorker) ---
         projects = []
-        PROMPT_FILENAME = "prompts.md"
-        
-        if (input_dir / PROMPT_FILENAME).exists():
+        if (input_dir / "prompts.md").exists():
             projects = [input_dir]
         else:
             projects = [d for d in input_dir.iterdir() if d.is_dir()]
         
         if not projects:
-             self.validator_report.setText("⚠️ No project folders found (checked for prompts.md or subfolders).")
+             self.validator_report.setText("⚠️ No project folders found.")
              return
 
-        # Mapping to closest resolution buckets
         optimized_plan = []
         target_quality = self.combo_res.currentText()
         
         for project_dir in projects:
-             # Find images (exclude internal 'optimized' folders if possible, but standard is root images)
-             # We only scan the project root for source images
              for img_file in project_dir.iterdir():
                 if img_file.suffix.lower() in valid_exts and img_file.is_file():
                     try:
@@ -715,159 +293,83 @@ class TabBatch(QWidget):
                             w, h = img.size
                             curr_ratio = w / h
                             
-                            # Find closest bucket ratio
                             def parse_ratio(r_str):
                                 p = r_str.split(':')
                                 return int(p[0]) / int(p[1])
                             
-                            best_ratio_key = min(RESOLUTION_TABLE.keys(), key=lambda r: abs(curr_ratio - parse_ratio(r)))
-                            target_w, target_h = RESOLUTION_TABLE[best_ratio_key][target_quality]
+                            best_ratio = min(RESOLUTION_TABLE.keys(), key=lambda r: abs(curr_ratio - parse_ratio(r)))
+                            target = RESOLUTION_TABLE[best_ratio][target_quality]
                             
-                            already_optimized = (w == target_w and h == target_h)
                             optimized_plan.append({
                                 'name': img_file.name,
-                                'current': (w, h),
                                 'path': img_file,
-                                'project_dir': project_dir, # Keep track of parent project
-                                'target': (target_w, target_h),
-                                'ratio': best_ratio_key,
-                                'optimized': already_optimized
+                                'project_dir': project_dir,
+                                'target': target,
+                                'ratio': best_ratio,
+                                'optimized': (w == target[0] and h == target[1])
                             })
-                    except Exception as e:
-                        self.validator_report.append(f"⚠️ Error reading {project_dir.name}/{img_file.name}: {e}")
+                    except: pass
         
-        # Store results
-        self.scan_results = {
-            'input_dir': input_dir,
-            'plan': optimized_plan
-        }
+        self.scan_results = {'input_dir': input_dir, 'plan': optimized_plan}
         
-        # Generate report
-        report = "=" * 50 + "\n"
-        report += f"📊 OPTIMIZATION REPORT ({target_quality})\n"
-        report += "=" * 50 + "\n\n"
+        ready = len([p for p in optimized_plan if p['optimized']])
+        total = len(optimized_plan)
+        report = f"📊 REPORT ({target_quality})\nTotal: {total} | Ready: {ready} | Needs Opt: {total - ready}\n"
         
-        needs_work = [p for p in optimized_plan if not p['optimized']]
-        is_ready = [p for p in optimized_plan if p['optimized']]
-        
-        report += f"Total Images: {len(optimized_plan)} (across {len(projects)} subprojects)\n"
-        report += f"✅ Perfect: {len(is_ready)}\n"
-        report += f"⚙️ To Optimize: {len(needs_work)}\n\n"
-        
-        if needs_work:
-            report += "⚙️ PENDING OPTIMIZATIONS:\n"
-            for p in needs_work[:10]:
-                report += f"  • {p['name']}: {p['current'][0]}×{p['current'][1]} → {p['target'][0]}×{p['target'][1]} ({p['ratio']})\n"
-            if len(needs_work) > 10:
-                report += f"  ... and {len(needs_work) - 10} more\n"
-            report += "\n"
-        
-        if is_ready:
-            report += "✅ ALREADY OPTIMIZED:\n"
-            for p in is_ready[:5]:
-                report += f"  • {p['name']} ({p['target'][0]}×{p['target'][1]})\n"
-        
-        report += "=" * 50 + "\n"
-        if needs_work:
-            report += "💡 Click 'OPTIMIZE FOR NANO BANANA PRO' to prepare images\n"
+        if total - ready > 0:
+            report += "💡 Click 'OPTIMIZE' to fix resolutions."
+            self.btn_crop.setEnabled(True)
         else:
-            report += "✅ All images are bucket-perfect!\n"
-        
+            report += "✅ All perfect!"
+            self.btn_crop.setEnabled(False)
+            
         self.validator_report.setText(report)
-        self.btn_crop.setEnabled(len(optimized_plan) > 0)
 
     def auto_crop_images(self):
-        """Optimize images to official Imagen buckets via Aspect Fill + Center Crop"""
-        if not self.scan_results:
-            self.validator_report.setText("❌ ERROR: Please analyze images first!")
-            return
+        if not self.scan_results: return
         
-        input_dir = self.scan_results['input_dir']
-        plan = self.scan_results['plan']
-        
-        
-        # Create optimized folder (We do this per project now, inside loop)
-        # cropped_dir = input_dir / "optimized" 
-        # cropped_dir.mkdir(exist_ok=True)
-        
-        self.validator_report.append("\n" + "=" * 50)
-        self.validator_report.append(f"🚀 OPTIMIZING FOR BATCH AI...")
-        
+        self.validator_report.append("\n🚀 OPTIMIZING...")
         processed = 0
-        errors = 0
+        input_dir = self.scan_results['input_dir']
         
-        for p in plan:
+        for p in self.scan_results['plan']:
             if p['optimized']: continue
             try:
                 with Image.open(p['path']) as img:
-                    # Smart Optimization: Scale to fill -> Center Crop (ImageOps.fit does this perfectly)
-                    # This ensures that if aspect ratio is already correct, no cropping happens (just resize)
-                    # And if not, it crops evenly from center.
-                    target_w, target_h = p['target']
+                    if img.mode != 'RGB': img = img.convert('RGB')
+                    new_img = ImageOps.fit(img, p['target'], method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
                     
-                    # Convert to RGB to avoid issues with RGBA/P modes during complex resizing if needed
-                    if img.mode != 'RGB':
-                        img = img.convert('RGB')
-                        
-                    # ImageOps.fit implements "Scale then Crop" logic
-                    new_img = ImageOps.fit(img, (target_w, target_h), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+                    p_dir = p.get('project_dir', input_dir)
+                    out_dir = p_dir / "optimized"
+                    out_dir.mkdir(exist_ok=True)
                     
-                    # Save to project-specific optimized folder
-                    project_dir = p.get('project_dir', input_dir) # Fallback if key missing (robustness)
-                    cropped_dir = project_dir / "optimized"
-                    cropped_dir.mkdir(exist_ok=True)
-
-                    save_path = cropped_dir / f"{p['name'].rsplit('.', 1)[0]}_optimized.{p['name'].split('.')[-1]}"
-                    # Save with high quality
-                    new_img.save(save_path, quality=95, subsampling=0)
-                
-                self.validator_report.append(f"✨ Optimized: {p['name']} → {p['target'][0]}×{p['target'][1]} ({p['ratio']})")
-                processed += 1
-            except Exception as e:
-                self.validator_report.append(f"❌ Error optimizing {p['name']}: {e}")
-                errors += 1
-        
-        # Final report
-        self.validator_report.append("\n" + "=" * 50)
-
-
-        self.validator_report.append(f"✅ OPTIMIZATION COMPLETE!")
-        self.validator_report.append(f"Processed: {processed} | Errors: {errors}")
-        self.validator_report.append(f"Check 'optimized' folders in each project.")
-        self.validator_report.append("=" * 50)
-        
-        self.validator_report.append("\n💡 Optimized images are ready and will be used as high-quality inputs.")
+                    save_name = f"{p['name'].rsplit('.', 1)[0]}_optimized.{p['name'].split('.')[-1]}"
+                    new_img.save(out_dir / save_name, quality=95)
+                    processed += 1
+            except: pass
+            
+        self.validator_report.append(f"✅ DONE! Optimized {processed} images.")
+        self.scan_results = None
+        self.btn_crop.setEnabled(False)
 
     def check_api_usage(self):
-        """Checks daily API usage from config and updates UI"""
-        today_str = QDate.currentDate().toString(Qt.ISODate) # YYYY-MM-DD
-        usage_data = config_helper.get_value("api_usage", {})
-        
-        # Reset if new day
-        if usage_data.get("date") != today_str:
-            usage_data = {"date": today_str, "count": 0}
-            config_helper.set_value("api_usage", usage_data)
-        
-        count = usage_data.get("count", 0)
-        self._update_api_label(count)
+        today = QDate.currentDate().toString(Qt.ISODate)
+        data = config_helper.get_value("api_usage", {})
+        if data.get("date") != today:
+            data = {"date": today, "count": 0}
+            config_helper.set_value("api_usage", data)
+        self._update_api_label(data["count"])
 
     def increment_api_usage(self):
-        """Increments the daily counter"""
-        today_str = QDate.currentDate().toString(Qt.ISODate)
-        usage_data = config_helper.get_value("api_usage", {})
+        today = QDate.currentDate().toString(Qt.ISODate)
+        data = config_helper.get_value("api_usage", {})
+        if data.get("date") != today: data = {"date": today, "count": 0}
         
-        # Double check date in case it crossed midnight during run
-        if usage_data.get("date") != today_str:
-            usage_data = {"date": today_str, "count": 0}
-        
-        usage_data["count"] = usage_data.get("count", 0) + 1
-        config_helper.set_value("api_usage", usage_data)
-        
-        self._update_api_label(usage_data["count"])
+        data["count"] = data.get("count", 0) + 1
+        config_helper.set_value("api_usage", data)
+        self._update_api_label(data["count"])
 
     def _update_api_label(self, count):
         self.lbl_api_counter.setText(f"RDP: {count}/{self.api_limit}")
-        if count >= self.api_limit:
-            self.lbl_api_counter.setStyleSheet("color: #d32f2f; font-weight: bold; margin-left: 10px;") # Red
-        else:
-            self.lbl_api_counter.setStyleSheet("color: #2da44e; font-weight: bold; margin-left: 10px;") # Green
+        color = "#2da44e" if count < self.api_limit else "#d32f2f"
+        self.lbl_api_counter.setStyleSheet(f"color: {color}; font-weight: bold; margin-left: 10px;")

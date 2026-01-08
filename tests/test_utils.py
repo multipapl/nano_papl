@@ -7,7 +7,7 @@ import os
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
-from utils import image_utils, prompt_parser, resource_helper
+from core.utils import image_utils, prompt_parser, resource_helper
 
 class TestUtils(unittest.TestCase):
     
@@ -15,7 +15,7 @@ class TestUtils(unittest.TestCase):
     def test_get_smart_ratio(self):
         # Mocking Image.open is complex because it returns a context manager
         # easier to create a dummy image or mock the context manager
-        with patch("utils.image_utils.Image.open") as mock_open:
+        with patch("core.utils.image_utils.Image.open") as mock_open:
             # Setup mock
             mock_img = MagicMock()
             mock_img.size = (1920, 1080) # 16:9

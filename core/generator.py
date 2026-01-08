@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from utils.resource_helper import get_resource_path
+from core.utils.resource_helper import get_resource_path
 
 class PromptGenerator:
     def __init__(self, templates_file=os.path.join("data", "templates.json")):
@@ -18,7 +18,13 @@ class PromptGenerator:
                 return {}
         return {}
 
-    def get_template_data(self):
+    def get_template_data(self) -> dict:
+        """
+        Retrieves the loaded template data.
+
+        Returns:
+            dict: The dictionary containing all template definitions.
+        """
         return self.data
 
     def generate_markdown(self, settings):

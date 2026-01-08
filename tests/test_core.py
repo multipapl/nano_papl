@@ -1,57 +1,60 @@
 import unittest
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 import sys
-import os
 from pathlib import Path
 
 # Add project root to path
 sys.path.append(str(Path(__file__).parent.parent))
 
 from core.llm_client import LLMClient
-from utils import config_helper
+from core.utils import config_helper
 
 class TestLLMClient(unittest.TestCase):
-    @patch('core.llm_client.genai.Client')
-    def test_init_gemini(self, mock_client_cls):
+    @patch('core.llm_client.LLMProviderFactory')
+    def test_init_gemini(self, mock_factory):
+        # Setup mock provider
+        mock_provider = MagicMock()
+        mock_factory.get_provider.return_value = mock_provider
+        
         api_key = "test_key"
+        # Init client
         client = LLMClient("gemini", "model_id", api_key)
         
-        # Verify it ignores provider/model args and hardcodes gemini
-        self.assertEqual(client.provider, "gemini")
-        self.assertEqual(client.model_id, "gemini-3-pro-image-preview")
-        self.assertEqual(client.api_key, api_key)
+        # Verify Factory was called with correct args
+        mock_factory.get_provider.assert_called_with("gemini", api_key, "model_id")
         
-        # Verify Google Client was initialized
-        mock_client_cls.assert_called_with(api_key=api_key)
+        # Verify client holds the provider
+        self.assertEqual(client.provider, mock_provider)
 
-    @patch('core.llm_client.genai.Client')
-    def test_generate_gemini_success(self, mock_client_cls):
-        # Setup Mock
-        mock_instance = mock_client_cls.return_value
-        mock_chat = MagicMock()
-        mock_instance.chats.create.return_value = mock_chat
+    @patch('core.llm_client.LLMProviderFactory')
+    def test_generate_delegation(self, mock_factory):
+        # Setup Mock Provider
+        mock_provider = MagicMock()
+        mock_factory.get_provider.return_value = mock_provider
         
-        # Mock Response
-        mock_response = MagicMock()
-        mock_part = MagicMock()
-        mock_part.text = "Hello World"
-        mock_part.inline_data = None
-        mock_response.parts = [mock_part]
-        mock_chat.send_message.return_value = mock_response
+        # Setup Mock Response
+        mock_provider.generate_chat.return_value = ("Hello World", None)
         
         client = LLMClient("gemini", "mod", "key")
         
         history = [{"role": "user", "text": "Hi"}]
         text, img = client.generate_chat(history, "Hello")
         
-        self.assertEqual(text, "Hello World\n".strip())
+        # Verify generate_chat was called on provider
+        mock_provider.generate_chat.assert_called_once()
+        
+        # Verify return values
+        self.assertEqual(text, "Hello World")
         self.assertIsNone(img)
 
 class TestConfigHelper(unittest.TestCase):
-    @patch("utils.config_helper.keyring")
-    @patch("builtins.open", new_callable=mock_open, read_data='{"data_root": "C:/Test"}')
+    @patch("core.utils.config_helper.keyring")
+    @patch("builtins.open")
     @patch("os.path.exists", return_value=True)
     def test_load_config(self, mock_exists, mock_file, mock_keyring):
+        # Mock file read
+        mock_file.return_value.__enter__.return_value.read.return_value = '{"data_root": "C:/Test"}'
+        
         # Setup Keyring Mock
         mock_keyring.get_password.return_value = "secret_key"
         
@@ -63,9 +66,9 @@ class TestConfigHelper(unittest.TestCase):
         key = config_helper.get_value("api_key")
         self.assertEqual(key, "secret_key")
 
-    @patch("utils.config_helper.keyring")
-    @patch("utils.config_helper.save_config") # Don't actually write file
-    @patch("utils.config_helper.load_config") # Return dummy dict
+    @patch("core.utils.config_helper.keyring")
+    @patch("core.utils.config_helper.save_config") # Don't actually write file
+    @patch("core.utils.config_helper.load_config") # Return dummy dict
     def test_set_value_api_key(self, mock_load, mock_save, mock_keyring):
         mock_load.return_value = {}
         
