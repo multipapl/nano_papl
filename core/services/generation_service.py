@@ -5,6 +5,7 @@ import io
 import google.genai as genai
 from google.genai import types
 from core.utils.path_provider import PathProvider
+from core.utils import image_utils
 
 class GenerationService:
     """
@@ -57,13 +58,7 @@ class GenerationService:
                 in_w, in_h = img.size
 
             # 2. Mime Type
-            mime_map = {
-                '.png': 'image/png',
-                '.jpg': 'image/jpeg',
-                '.jpeg': 'image/jpeg',
-                '.webp': 'image/webp'
-            }
-            mime_type = mime_map.get(image_path.suffix.lower(), 'image/png')
+            mime_type = image_utils.get_mime_type(image_path)
 
             # 3. Config
             resolution = output_config.get('resolution', '1K')
@@ -71,16 +66,7 @@ class GenerationService:
             
             image_config_params = {"image_size": resolution}
             
-            # Helper to calculate ratio if Manual (moved from BatchWorker logic, could be utility)
-            # For now, relying on the value passed being either "Manual" or a ratio string.
-            # If "Manual", the caller (BatchWorker) might have already calculated it or we calculate here.
-            # BatchWorker previously called `get_smart_ratio`. Let's assume we do it here if needed.
-            
             if ratio_mode == "Manual":
-                # We need util import, or duplicate logic. 
-                # Better to use the util. existing code imported `image_utils` from `utils`.
-                # I will add import at top.
-                from core.utils import image_utils
                 ratio_val = image_utils.get_smart_ratio(image_path)
                 image_config_params["aspect_ratio"] = ratio_val
             elif ratio_mode != "Auto": # If not Auto and not Manual, it's specific
@@ -127,7 +113,7 @@ class GenerationService:
         except Exception as e:
             return {'success': False, 'error': str(e)}
 
-    def _save_generated_image(self, img_data, prompt_data, source_path, config, input_size):
+    def _save_generated_image(self, img_data: bytes, prompt_data: dict, source_path: Path, config: dict, input_size: tuple) -> dict:
         try:
             generated_img = Image.open(io.BytesIO(img_data))
             gen_w, gen_h = generated_img.size
@@ -138,20 +124,33 @@ class GenerationService:
             suffix = "_diff" if is_diff else ""
 
             # Filename Construction
-            ts = datetime.datetime.now().strftime("%H%M%S")
-            clean_title = prompt_data['title'].replace("_+_", "+").replace(" + ", "+")
-            clean_stem = source_path.stem.replace("_optimized", "")
-            base_name = f"{clean_stem}_{clean_title}_{ts}{suffix}"
+            naming_func = config.get('naming_func')
+            suffix = "_diff" if is_diff else ""
+            out_fmt = config.get('format', 'PNG')
+            ext = ".png" if out_fmt == "PNG" else ".jpg"
+
+            if naming_func:
+                base_name = naming_func(source_path.stem, prompt_data['title'], ext)
+                if is_diff:
+                     base_stem = Path(base_name).stem
+                     base_name = f"{base_stem}{suffix}{Path(base_name).suffix}"
+            else:
+                 # Fallback (Legacy)
+                 ts = datetime.datetime.now().strftime("%H%M%S")
+                 clean_title = image_utils.clean_prompt_title(prompt_data['title'])
+                 clean_stem = image_utils.clean_stem(source_path.stem)
+                 base_name = f"{clean_stem}_{clean_title}_{ts}{suffix}{ext}"
 
             # Output Path
             project_out = config.get('project_out_dir')
-            # Subfolder for this specific image source
+            
+            # Subfolder for this specific image source (Restored)
+            clean_stem = image_utils.clean_stem(source_path.stem)
             image_out_dir = project_out / clean_stem
             image_out_dir.mkdir(parents=True, exist_ok=True)
-
-            out_fmt = config.get('format', 'PNG')
-            ext = ".png" if out_fmt == "PNG" else ".jpg"
-            save_path = image_out_dir / f"{base_name}{ext}"
+            
+            # base_name already includes extension from block above
+            save_path = image_out_dir / base_name
 
             # Saving
             if out_fmt == "JPG":
@@ -163,7 +162,9 @@ class GenerationService:
             # Save Log if requested
             if config.get('save_log', False):
                  log_text = f"PROMPT:\n{prompt_data['prompt']}"
-                 (image_out_dir / f"{base_name}.txt").write_text(log_text, encoding="utf-8")
+                 # Ensure txt has same base name
+                 txt_name = Path(base_name).stem + ".txt"
+                 (image_out_dir / txt_name).write_text(log_text, encoding="utf-8")
 
             return {
                 'success': True,

@@ -14,7 +14,7 @@ from PySide6.QtCore import Qt
 
 from ui.tab_constructor import TabConstructor
 from ui.tab_batch import TabBatch
-from ui.tab_comfy import TabComfyUI
+from ui.tab_tools import TabTools
 from ui.tab_chat import TabChat
 from ui.tab_settings import TabSettings
 
@@ -45,8 +45,8 @@ class NanoPaplApp(QMainWindow):
         self.tab_batch = TabBatch()
         self.tabs.addTab(self.tab_batch, "Batch Studio")
 
-        self.tab_comfy = TabComfyUI()
-        self.tabs.addTab(self.tab_comfy, "ComfyUI")
+        self.tab_tools = TabTools()
+        self.tabs.addTab(self.tab_tools, "Tools")
 
         self.tab_chat = TabChat()
         self.tabs.addTab(self.tab_chat, "Chat")

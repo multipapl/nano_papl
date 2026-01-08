@@ -4,7 +4,8 @@ from pathlib import Path
 
 from core.services.generation_service import GenerationService
 from core.utils.path_provider import PathProvider
-from core.utils import prompt_parser, image_utils
+from core.utils import prompt_parser, image_utils, naming
+from core.utils.image_utils import SUPPORTED_IMAGE_FORMATS
 from core.logger import logger
 
 class BatchWorker(QThread):
@@ -42,6 +43,9 @@ class BatchWorker(QThread):
         # PathProvider for standardized filenames
         self.path_provider = PathProvider()
 
+    def get_unified_filename(self, stem, title, ext):
+        return naming.generate_filename(stem, title, ext)
+
     def run(self):
         self.log_signal.emit("--- INITIALIZING BATCH PROCESS ---")
         try:
@@ -63,8 +67,8 @@ class BatchWorker(QThread):
             if not projects:
                 self.log_signal.emit("WARNING: No project folders found (checked for prompts.md).")
             
-            valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
-
+            valid_exts = SUPPORTED_IMAGE_FORMATS
+            
             # --- Pre-calculation Phase ---
             self.log_signal.emit("Calculating workload...")
             total_operations = 0
@@ -73,9 +77,7 @@ class BatchWorker(QThread):
                 if self.stop_requested: break
                 
                 # Logic must match the processing loop to be accurate
-                # Use PathProvider or logic similar to it? 
-                # Ideally PathProvider should tell us where source images are.
-                # Assuming standard 'optimized' folder logic is desired, we use helper or direct check
+                # Logic must match the processing loop to be accurate
                 image_source_dir = self.path_provider.get_optimized_dir(project_dir)
                 if not image_source_dir.exists():
                     image_source_dir = project_dir
@@ -138,7 +140,8 @@ class BatchWorker(QThread):
                             'ratio': self.ratio,
                             'format': self.output_format,
                             'project_out_dir': project_out,
-                            'save_log': self.check_logs
+                            'save_log': self.check_logs,
+                            'naming_func': self.get_unified_filename # Inject naming function
                         }
 
                         # Call Service

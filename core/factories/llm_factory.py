@@ -3,6 +3,7 @@ from pathlib import Path
 from PIL import Image
 import google.genai as genai
 from google.genai import types
+from core.utils import image_utils
 
 class LLMProvider(ABC):
     """Abstract base class for LLM providers."""
@@ -30,9 +31,7 @@ class GeminiProvider(LLMProvider):
             p = Path(path)
             if p.exists():
                 img_data = p.read_bytes()
-                mime = "image/png"
-                if p.suffix.lower() in ['.jpg', '.jpeg']: mime = "image/jpeg"
-                if p.suffix.lower() == '.webp': mime = "image/webp"
+                mime = image_utils.get_mime_type(p)
                 current_parts.append(types.Part.from_bytes(data=img_data, mime_type=mime))
 
         # 2. History Conversion
@@ -47,30 +46,37 @@ class GeminiProvider(LLMProvider):
         aspect_ratio = config.get("ratio", "1:1")
         
         # Auto Ratio Logic
+        # Aspect ratio calculation already uses image_utils.get_smart_ratio
         if aspect_ratio.lower() == "auto" and image_paths:
              try:
-                with Image.open(image_paths[0]) as img:
-                    w, h = img.size
-                    curr_ratio = w / h
-                    common = [
-                        (1, 1), (16, 9), (9, 16), (4, 3), (3, 4), 
-                        (3, 2), (2, 3), (5, 4), (4, 5), (21, 9)
-                    ]
-                    best = min(common, key=lambda r: abs(curr_ratio - r[0]/r[1]))
-                    aspect_ratio = f"{best[0]}:{best[1]}"
+                aspect_ratio = image_utils.get_smart_ratio(image_paths[0])
              except:
                 aspect_ratio = "16:9"
+        
+        # Check if model supports image generation
+        is_flash_model = "flash" in self.model_id.lower()
+        # You might want a better way to classify, but adhering to the specific error:
+        # gemini-3-flash-preview is text/multimodal-input but NOT image-output
+        
+        gen_config_args = {
+            "temperature": 0.7,
+            "system_instruction": system_instruction
+        }
 
-        image_config_params = {"image_size": resolution}
-        if aspect_ratio.lower() != "auto":
-            image_config_params["aspect_ratio"] = aspect_ratio
+        if is_flash_model:
+            # TEXT ONLY OUTPUT
+            gen_config_args["response_modalities"] = ["TEXT"]
+            # Do NOT pass image_config
+        else:
+            # TEXT + IMAGE OUTPUT
+            image_config_params = {"image_size": resolution}
+            if aspect_ratio.lower() != "auto":
+                image_config_params["aspect_ratio"] = aspect_ratio
+            
+            gen_config_args["response_modalities"] = ["TEXT", "IMAGE"]
+            gen_config_args["image_config"] = types.ImageConfig(**image_config_params)
 
-        gen_config = types.GenerateContentConfig(
-            system_instruction=system_instruction,
-            temperature=0.7,
-            response_modalities=["TEXT", "IMAGE"],
-            image_config=types.ImageConfig(**image_config_params)
-        )
+        gen_config = types.GenerateContentConfig(**gen_config_args)
 
         # 4. Chat Creation & Sending
         chat = self.client.chats.create(

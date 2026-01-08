@@ -28,3 +28,10 @@ DEFAULT_SYSTEM_INSTRUCTION = (
     "If asked to generate an image, you CAN do it (if provided tool allows). "
     "ALWAYS respect the requested Aspect Ratio and Resolution style in the prompt."
 )
+
+# ComfyUI Node Mapping
+DEFAULT_NODE_MAPPING = {
+    "LOAD_IMAGE": "11",
+    "GEMINI_PROMPT": "35",
+    "SAVE_IMAGE": "30"
+}

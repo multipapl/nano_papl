@@ -1,48 +1,39 @@
+import os
+import json
+from pathlib import Path
 from PySide6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QPushButton, 
-    QProgressBar, QTextEdit, QComboBox, QGroupBox, QSplitter, QSizePolicy, QMessageBox
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
+    QProgressBar, QTextEdit, QComboBox, QGroupBox, QSplitter, 
+    QCheckBox, QSpinBox, QSizePolicy
 )
 from PySide6.QtCore import Qt, QDate
-from pathlib import Path
-from PIL import Image, ImageOps
+
 from core.utils import config_helper
 from ui.styles import Styles, Colors
+from ui.base_tab import BaseTab
+
+# Widgets
 from ui.widgets.path_selector import PathSelectorWidget
 from ui.widgets.image_compare import ImageCompareWidget
 from ui.widgets.console_log import ConsoleLogWidget
-from core.workers.batch_worker import BatchWorker
-from ui.base_tab import BaseTab
 
-# Empirically Verified Resolution Table (Truth Table)
-RESOLUTION_TABLE = {
-    "1:1":  {"1K": (1024, 1024), "2K": (2048, 2048), "4K": (4096, 4096)},
-    "16:9": {"1K": (1376, 768),  "2K": (2752, 1536), "4K": (5504, 3072)},
-    "9:16": {"1K": (768, 1376),  "2K": (1536, 2752), "4K": (3072, 5504)},
-    "4:3":  {"1K": (1200, 896),  "2K": (2400, 1792), "4K": (4800, 3584)},
-    "3:4":  {"1K": (896, 1200),  "2K": (1792, 2400), "4K": (3584, 4800)},
-    "3:2":  {"1K": (1264, 848),  "2K": (2528, 1696), "4K": (5056, 3392)},
-    "2:3":  {"1K": (848, 1264),  "2K": (1696, 2528), "4K": (3392, 5056)},
-    "5:4":  {"1K": (1152, 928),  "2K": (2304, 1856), "4K": (4608, 3712)},
-    "4:5":  {"1K": (928, 1152),  "2K": (1856, 2304), "4K": (3712, 4608)},
-    "21:9": {"1K": (1584, 672),  "2K": (3168, 1344), "4K": (6336, 2688)}
-}
+# Workers
+from core.workers.batch_worker import BatchWorker
+from core.workers.comfy_worker import ComfyWorker
 
 class TabBatch(BaseTab):
     """
-    UI for batch image processing.
-    
-    Features:
-    - Path selection for Input (Images) and Output (Generation)
-    - Grid validation and auto-cropping/optimization
-    - Live progress tracking with ETA and logging
-    - Preview comparing input vs output
+    Unified Batch Generation Tab.
+    Supports:
+    1. Gemini Cloud Generation (Text-to-Image via Google GenAI)
+    2. ComfyUI Local Generation (via Local API)
     """
     def __init__(self):
         super().__init__()
         self.worker = None
         self.MODEL_ID = "gemini-3-pro-image-preview"
-        self.scan_results = None
         self.api_limit = 250
+        self.default_workflow_path = "data/api_nano_banana_pro.json"
         
         self.setStyleSheet(Styles.GLOBAL + Styles.INPUT_FIELD + Styles.SECTION_HEADER + Styles.BTN_BASE)
         
@@ -50,6 +41,9 @@ class TabBatch(BaseTab):
         self._register_fields()
         self.load_state()
         self.check_api_usage()
+        
+        # Trigger initial visibility update
+        self._on_engine_changed(self.combo_engine.currentText())
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -60,76 +54,112 @@ class TabBatch(BaseTab):
         left_layout = QVBoxLayout(left_widget)
         left_layout.setContentsMargins(0, 0, 0, 0)
         
-        # 1. Grid Validator
-        grp_validator = QGroupBox("📋 Image Grid Validator (64px)")
-        l_validator = QVBoxLayout()
+        # 1. Engine Selection
+        grp_engine = QGroupBox("Generation Engine")
+        l_engine = QHBoxLayout()
+        self.combo_engine = QComboBox()
+        self.combo_engine.addItems(["Google (API)", "Comfy (API)"])
+        self.combo_engine.currentTextChanged.connect(self._on_engine_changed)
+        l_engine.addWidget(self.combo_engine)
+        grp_engine.setLayout(l_engine)
+        left_layout.addWidget(grp_engine)
         
-        h_val = QHBoxLayout()
-        self.btn_scan = QPushButton("🔍 ANALYZE")
-        self.btn_scan.setStyleSheet(Styles.BTN_ACCENT)
-        self.btn_scan.clicked.connect(self.scan_images)
-        h_val.addWidget(self.btn_scan)
-        
-        self.btn_crop = QPushButton("🍌 OPTIMIZE")
-        self.btn_crop.setStyleSheet(Styles.BTN_PRIMARY)
-        self.btn_crop.clicked.connect(self.auto_crop_images)
-        self.btn_crop.setEnabled(False)
-        h_val.addWidget(self.btn_crop)
-        l_validator.addLayout(h_val)
-        
-        self.validator_report = QTextEdit()
-        self.validator_report.setReadOnly(True)
-        self.validator_report.setMaximumHeight(100)
-        self.validator_report.setStyleSheet(Styles.TEXT_AREA_CONSOLE)
-        self.validator_report.setPlaceholderText("Scan to check alignment...")
-        l_validator.addWidget(self.validator_report)
-        
-        grp_validator.setLayout(l_validator)
-        left_layout.addWidget(grp_validator)
-        
-        # 2. Paths
-        grp_paths = QGroupBox("Paths & Settings")
-        l_paths = QVBoxLayout() # Changed to VBox for widgets
-        l_paths.setSpacing(10)
+        # 2. Paths & Shared Settings
+        grp_paths = QGroupBox("Configuration")
+        l_config = QVBoxLayout()
+        l_config.setSpacing(10)
         
         self.path_in = PathSelectorWidget("Input Root:", select_file=False)
-        l_paths.addWidget(self.path_in)
+        l_config.addWidget(self.path_in)
         
         self.path_out = PathSelectorWidget("Output Folder:", select_file=False)
-        l_paths.addWidget(self.path_out)
+        l_config.addWidget(self.path_out)
 
-        # Settings Row
-        h_set = QHBoxLayout()
+
+        # Shared Params Row
+        h_params = QHBoxLayout()
         
-        h_set.addWidget(QLabel("Res:"))
+        h_params.addWidget(QLabel("Res:"))
         self.combo_res = QComboBox()
         self.combo_res.addItems(["1K", "2K", "4K"])
-        h_set.addWidget(self.combo_res)
+        h_params.addWidget(self.combo_res)
         
-        h_set.addWidget(QLabel("Ratio:"))
+        h_params.addWidget(QLabel("Ratio:"))
         self.combo_ratio = QComboBox()
-        self.combo_ratio.addItems(["Auto", "Manual"])
-        h_set.addWidget(self.combo_ratio)
-
-        h_set.addWidget(QLabel("Fmt:"))
+        self.combo_ratio.addItems(["Auto", "Manual", "1:1", "16:9", "9:16", "4:5", "3:4"]) 
+        h_params.addWidget(self.combo_ratio)
+        
+        l_config.addLayout(h_params)
+        
+        # --- ENGINE SPECIFIC CONTROLS (STACKED) ---
+        from PySide6.QtWidgets import QStackedWidget
+        self.stack_engine_controls = QStackedWidget()
+        self.stack_engine_controls.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed) # Prevent jumping
+        
+        # PAGE 1: Google (API)
+        page_google = QWidget()
+        l_google = QVBoxLayout(page_google)
+        l_google.setContentsMargins(0, 0, 0, 0)
+        
+        h_google = QHBoxLayout()
+        self.lbl_fmt = QLabel("Fmt:")
         self.combo_fmt = QComboBox()
         self.combo_fmt.addItems(["PNG", "JPG"])
-        h_set.addWidget(self.combo_fmt)
+        h_google.addWidget(self.lbl_fmt)
+        h_google.addWidget(self.combo_fmt)
         
         self.lbl_api_counter = QLabel("RDP: ...")
         self.lbl_api_counter.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-weight: bold; margin-left: 10px;")
-        h_set.addWidget(self.lbl_api_counter)
+        h_google.addWidget(self.lbl_api_counter)
+        h_google.addStretch()
+        l_google.addLayout(h_google)
         
-        h_set.addStretch()
-        l_paths.addLayout(h_set)
-        grp_paths.setLayout(l_paths)
+        # PAGE 2: Comfy (API)
+        page_comfy = QWidget()
+        l_comfy = QVBoxLayout(page_comfy)
+        l_comfy.setContentsMargins(0, 0, 0, 0)
+        
+        # Seed Row
+        h_seed = QHBoxLayout()
+        self.check_random_seed = QCheckBox("Random Seed")
+        self.check_random_seed.setChecked(True)
+        self.check_random_seed.toggled.connect(self._toggle_seed_input)
+        
+        self.spin_seed = QSpinBox()
+        self.spin_seed.setRange(0, 999999999)
+        self.spin_seed.setValue(123456789)
+        self.spin_seed.setEnabled(False)
+        self.spin_seed.setMinimumWidth(120)
+        
+        h_seed.addWidget(self.check_random_seed)
+        h_seed.addWidget(self.spin_seed)
+        h_seed.addStretch()
+        l_comfy.addLayout(h_seed)
+
+        # System Prompt
+        lbl_sys = QLabel("System Prompt Override:")
+        lbl_sys.setStyleSheet("font-size: 10px; color: #888;")
+        l_comfy.addWidget(lbl_sys)
+        
+        self.text_sys_prompt = QTextEdit()
+        self.text_sys_prompt.setPlaceholderText("Override workflow default...")
+        self.text_sys_prompt.setFixedHeight(60) # Compact height
+        l_comfy.addWidget(self.text_sys_prompt)
+        
+        # Add pages
+        self.stack_engine_controls.addWidget(page_google) # Index 0
+        self.stack_engine_controls.addWidget(page_comfy)  # Index 1
+        
+        l_config.addWidget(self.stack_engine_controls)
+        grp_paths.setLayout(l_config)
+        
         left_layout.addWidget(grp_paths)
 
-        # 3. Status Log
+        # 4. Logs
         self.log_widget = ConsoleLogWidget()
         left_layout.addWidget(self.log_widget)
         
-        # 4. Progress & ETA
+        # 5. Progress & Action
         h_prog = QHBoxLayout()
         self.progress = QProgressBar()
         self.progress.setValue(0)
@@ -140,9 +170,18 @@ class TabBatch(BaseTab):
         h_prog.addWidget(self.lbl_eta)
         left_layout.addLayout(h_prog)
 
-        # 5. Buttons
         h_btns = QHBoxLayout()
-        self.btn_start = QPushButton("START PROCESSING")
+        
+        # Comfy Dry Run (Moved to bottom button area, visible only for Comfy?)
+        # Or keep in stack? User screenshot showed it at bottom.
+        # I will make it visible/hidden based on engine but place it here.
+        self.check_dry_run = QCheckBox("Dry Run")
+        self.check_dry_run.setToolTip("Uploads resources but does not generate images.")
+        self.check_dry_run.setChecked(False) # Default OFF per request
+        self.check_dry_run.setStyleSheet("font-weight: bold; color: #E0E0E0; margin-right: 15px;")
+        h_btns.addWidget(self.check_dry_run)
+
+        self.btn_start = QPushButton("START BATCH")
         self.btn_start.setMinimumHeight(45)
         self.btn_start.setStyleSheet(Styles.BTN_PRIMARY)
         self.btn_start.clicked.connect(self.start_process)
@@ -154,6 +193,7 @@ class TabBatch(BaseTab):
         self.btn_stop.clicked.connect(self.stop_process)
         self.btn_stop.setEnabled(False)
         h_btns.addWidget(self.btn_stop)
+        
         left_layout.addLayout(h_btns)
 
         # --- RIGHT PANEL (Preview) ---
@@ -164,11 +204,9 @@ class TabBatch(BaseTab):
         grp_preview = QGroupBox("Live Preview")
         l_preview = QVBoxLayout()
         
-        # Image Comparison Widget
         self.img_compare = ImageCompareWidget()
-        l_preview.addWidget(self.img_compare, 3) # Takes more space
+        l_preview.addWidget(self.img_compare, 3)
 
-        # Prompt Display
         lbl_p = QLabel("Current Prompt:")
         lbl_p.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-size: 11px; font-weight: bold;")
         l_preview.addWidget(lbl_p)
@@ -191,63 +229,136 @@ class TabBatch(BaseTab):
         main_layout.addWidget(splitter)
     
     def _register_fields(self):
-        """Register all stateful widgets with BaseTab"""
+        """Register all stateful widgets"""
+        self.register_field("batch_engine", self.combo_engine)
         self.register_field("input_path", self.path_in)
         self.register_field("output_path", self.path_out)
         self.register_field("resolution", self.combo_res)
         self.register_field("aspect_ratio", self.combo_ratio)
         self.register_field("output_format", self.combo_fmt)
+        
+        # Comfy specific
+        self.register_field("comfy_sys_prompt", self.text_sys_prompt)
+        self.register_field("comfy_random_seed", self.check_random_seed)
+        self.register_field("comfy_seed_value", self.spin_seed)
+        self.register_field("comfy_dry_run", self.check_dry_run)
 
-    def save_settings(self):
-        """Simplified - uses BaseTab's automated save"""
-        super().save_state()
+    def _on_engine_changed(self, text):
+        is_gemini = "Google" in text
+        is_comfy = "Comfy" in text
+        
+        # Switch Stack Page
+        self.stack_engine_controls.setCurrentIndex(0 if is_gemini else 1)
+        
+        # Toggle Dry Run Visibility (only for Comfy)
+        self.check_dry_run.setVisible(is_comfy)
+        
+        if is_comfy:
+            self._load_comfy_defaults()
 
-    def load_state(self):
-        """Simplified - uses BaseTab's automated load"""
-        super().load_state()
+    def _toggle_seed_input(self, checked):
+        self.spin_seed.setEnabled(not checked)
+        if not checked:
+            self.spin_seed.setFocus()
+
+    def _load_comfy_defaults(self):
+        if not self.text_sys_prompt.toPlainText():
+            default_sys_prompt = ""
+            try:
+                if os.path.exists(self.default_workflow_path):
+                    with open(self.default_workflow_path, 'r', encoding='utf-8') as f:
+                        wf = json.load(f)
+                        if "35" in wf and "inputs" in wf["35"]:
+                            default_sys_prompt = wf["35"]["inputs"].get("system_prompt", "")
+            except: pass
+            if default_sys_prompt:
+                self.text_sys_prompt.setPlainText(default_sys_prompt)
 
     def start_process(self):
-        key = config_helper.get_value("api_key", "")
+        engine = self.combo_engine.currentText()
         in_path = self.path_in.get_path()
         out_path = self.path_out.get_path()
         
-        if not key or not in_path:
-            self.log_widget.append_log("[ERROR] Invalid API Key or Input Path")
+        if not in_path:
+            self.log_widget.append_log("[ERROR] Invalid Input Path")
             return
 
-        self.save_settings()
+        self.save_state()
         self.log_widget.clear_log()
         self.btn_start.setEnabled(False)
         self.btn_stop.setEnabled(True)
         self.progress.setValue(0)
         self.lbl_eta.setText("ETA: ...")
-        
         self.img_compare.clear()
         self.txt_prompt.clear()
+        
+        if "Google" in engine:
+            self._start_gemini(in_path, out_path)
+        else:
+            self._start_comfy(in_path, out_path)
 
-        # Create worker
+    def _start_gemini(self, in_path: str, out_path: str) -> None:
+        key = config_helper.get_value("api_key", "")
+        if not key:
+            self.log_widget.append_log("[ERROR] API Key required for Gemini")
+            self._on_finished()
+            return
+            
         self.worker = BatchWorker(
             key, in_path, out_path,
             self.combo_res.currentText(), self.combo_ratio.currentText(),
             self.combo_fmt.currentText(),
-            self.MODEL_ID, True, # logs always valid now
+            self.MODEL_ID, True,
             parent=self
         )
-        self.worker.log_signal.connect(self.log_widget.append_log)
-        self.worker.progress_signal.connect(self.progress.setValue)
-        self.worker.time_estimate_signal.connect(self.lbl_eta.setText)
-        self.worker.finished_signal.connect(self.on_finished)
-        self.worker.finished.connect(self.worker.deleteLater)
-        self.worker.error_signal.connect(lambda e: self.log_widget.append_log(f"CRITICAL ERROR: {e}"))
+        self._connect_common_signals()
+        self.worker.time_estimate_signal.connect(self.lbl_eta.setText) # Gemini only feature currently
         self.worker.preview_signal.connect(self.update_preview)
         self.worker.api_call_signal.connect(self.increment_api_usage)
-        
         self.worker.start()
+
+    def _start_comfy(self, in_path: str, out_path: str) -> None:
+        if not out_path:
+             self.log_widget.append_log("[ERROR] Output Path required for ComfyUI")
+             self._on_finished()
+             return
+
+        batch_settings = {
+            "comfy_url": config_helper.get_value("comfy_url", "http://127.0.0.1:8188"),
+            "api_key": config_helper.get_value("comfy_api_key", ""), # Future proofing
+            "input_path": in_path,
+            "output_path": out_path,
+            "resolution": self.combo_res.currentText(),
+            "ratio": self.combo_ratio.currentText(),
+            "dry_run": self.check_dry_run.isChecked(),
+            "workflow_path": self.default_workflow_path,
+            "system_prompt": self.text_sys_prompt.toPlainText(),
+            "use_random_seed": self.check_random_seed.isChecked(),
+            "seed_value": self.spin_seed.value()
+        }
+        
+        self.worker = ComfyWorker(batch_settings)
+        self._connect_common_signals()
+        self.worker.preview_signal.connect(self.update_preview) # Added Connection
+        self.worker.start()
+
+    def _connect_common_signals(self):
+        self.worker.log_signal.connect(self.log_widget.append_log)
+        self.worker.progress_signal.connect(self.progress.setValue)
+        self.worker.finished_signal.connect(self.on_finished)
+        self.worker.error_signal.connect(lambda e: self.log_widget.append_log(f"CRITICAL ERROR: {e}"))
+        self.worker.finished.connect(self.worker.deleteLater)
 
     def stop_process(self):
         if self.worker:
             self.log_widget.append_log("!!! STOP REQUESTED !!!")
-            self.worker.request_stop()
+            # Both workers support stop()/request_stop() differently?
+            # ComfyWorker has stop(), BatchWorker has request_stop()
+            # Let's standardize or check type.
+            if hasattr(self.worker, 'stop'):
+                self.worker.stop()
+            elif hasattr(self.worker, 'request_stop'):
+                self.worker.request_stop()
             self.btn_stop.setEnabled(False)
 
     def on_finished(self):
@@ -261,97 +372,7 @@ class TabBatch(BaseTab):
         self.img_compare.set_input(in_path)
         self.img_compare.set_output(out_path)
 
-    def scan_images(self):
-        input_path = self.path_in.get_path()
-        if not input_path or not Path(input_path).exists():
-            self.validator_report.setText("❌ Select valid input folder!")
-            return
-        
-        # Reuse logic but keep it concise here or extract to Utils if repeated
-        # Keeping core logic here as requested to not over-engineer if unique
-        input_dir = Path(input_path)
-        valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
-        
-        projects = []
-        if (input_dir / "prompts.md").exists():
-            projects = [input_dir]
-        else:
-            projects = [d for d in input_dir.iterdir() if d.is_dir()]
-        
-        if not projects:
-             self.validator_report.setText("⚠️ No project folders found.")
-             return
-
-        optimized_plan = []
-        target_quality = self.combo_res.currentText()
-        
-        for project_dir in projects:
-             for img_file in project_dir.iterdir():
-                if img_file.suffix.lower() in valid_exts and img_file.is_file():
-                    try:
-                        with Image.open(img_file) as img:
-                            w, h = img.size
-                            curr_ratio = w / h
-                            
-                            def parse_ratio(r_str):
-                                p = r_str.split(':')
-                                return int(p[0]) / int(p[1])
-                            
-                            best_ratio = min(RESOLUTION_TABLE.keys(), key=lambda r: abs(curr_ratio - parse_ratio(r)))
-                            target = RESOLUTION_TABLE[best_ratio][target_quality]
-                            
-                            optimized_plan.append({
-                                'name': img_file.name,
-                                'path': img_file,
-                                'project_dir': project_dir,
-                                'target': target,
-                                'ratio': best_ratio,
-                                'optimized': (w == target[0] and h == target[1])
-                            })
-                    except: pass
-        
-        self.scan_results = {'input_dir': input_dir, 'plan': optimized_plan}
-        
-        ready = len([p for p in optimized_plan if p['optimized']])
-        total = len(optimized_plan)
-        report = f"📊 REPORT ({target_quality})\nTotal: {total} | Ready: {ready} | Needs Opt: {total - ready}\n"
-        
-        if total - ready > 0:
-            report += "💡 Click 'OPTIMIZE' to fix resolutions."
-            self.btn_crop.setEnabled(True)
-        else:
-            report += "✅ All perfect!"
-            self.btn_crop.setEnabled(False)
-            
-        self.validator_report.setText(report)
-
-    def auto_crop_images(self):
-        if not self.scan_results: return
-        
-        self.validator_report.append("\n🚀 OPTIMIZING...")
-        processed = 0
-        input_dir = self.scan_results['input_dir']
-        
-        for p in self.scan_results['plan']:
-            if p['optimized']: continue
-            try:
-                with Image.open(p['path']) as img:
-                    if img.mode != 'RGB': img = img.convert('RGB')
-                    new_img = ImageOps.fit(img, p['target'], method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
-                    
-                    p_dir = p.get('project_dir', input_dir)
-                    out_dir = p_dir / "optimized"
-                    out_dir.mkdir(exist_ok=True)
-                    
-                    save_name = f"{p['name'].rsplit('.', 1)[0]}_optimized.{p['name'].split('.')[-1]}"
-                    new_img.save(out_dir / save_name, quality=95)
-                    processed += 1
-            except: pass
-            
-        self.validator_report.append(f"✅ DONE! Optimized {processed} images.")
-        self.scan_results = None
-        self.btn_crop.setEnabled(False)
-
+    # API Counter Logic (Shared/Gemini)
     def check_api_usage(self):
         today = QDate.currentDate().toString(Qt.ISODate)
         data = config_helper.get_value("api_usage", {})

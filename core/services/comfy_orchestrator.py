@@ -3,25 +3,20 @@ import time
 from pathlib import Path
 
 from core.comfy_api import ComfyAPI
+from core.constants import DEFAULT_NODE_MAPPING
 from core.utils.path_provider import PathProvider
-from core.utils import prompt_parser, image_utils
-
-# Default Mapping
-DEFAULT_NODE_MAPPING = {
-    "LOAD_IMAGE": "11",
-    "GEMINI_PROMPT": "35",
-    "SAVE_IMAGE": "30"
-}
+from core.utils import prompt_parser, image_utils, naming
 
 class ComfyOrchestrator:
     """
     Orchestrates the batch processing of images through ComfyUI.
     Handles project scanning, task creation, and execution flow.
     """
-    def __init__(self, settings, log_callback=None, progress_callback=None, node_mapping=None):
+    def __init__(self, settings, log_callback=None, progress_callback=None, preview_callback=None, node_mapping=None):
         self.settings = settings
         self.log_callback = log_callback or (lambda x: None)
         self.progress_callback = progress_callback or (lambda x: None)
+        self.preview_callback = preview_callback or (lambda x, y, z: None) # input, output, prompt
         
         self.api = ComfyAPI(base_url=settings.get("comfy_url", "http://127.0.0.1:8188"))
         self.is_running = True
@@ -36,14 +31,17 @@ class ComfyOrchestrator:
     def stop(self):
         self.is_running = False
 
-    def process_batch(self):
+    def process_batch(self) -> None:
+        """
+        Main entry point for processing the batch.
+        Iterates through projects, creates tasks, and executes them.
+        """
         # Input path from settings (UI) or PathProvider?
-        # UI passes 'input_path' and 'output_path'. We respect those but fall back to defaults?
         input_path_str = self.settings.get("input_path", "")
         output_path_str = self.settings.get("output_path", "")
         
         input_path = Path(input_path_str) if input_path_str else self.project_provider.get_default_projects_path()
-        output_path = Path(output_path_str) if output_path_str else self.project_provider.get_renders_dir(input_path) # Default to _renders if not set?
+        output_path = Path(output_path_str) if output_path_str else self.project_provider.get_renders_dir(input_path)
         
         workflow_path = self.settings.get("workflow_path", "")
         dry_run = self.settings.get("dry_run", False)
@@ -73,7 +71,8 @@ class ComfyOrchestrator:
             self.log(f"Error: No project folders found in {input_path} (checked for prompts.md).")
             return
 
-        valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+        # Use standard supported formats, convert set to tuple for suffix checking
+        valid_exts = tuple(image_utils.SUPPORTED_IMAGE_FORMATS)
 
         # 3. Workload Calculation
         task_list = [] # List of (project_dir, img_path, prompt_data)
@@ -125,7 +124,7 @@ class ComfyOrchestrator:
 
         self.log("Batch Cycle Completed.")
 
-    def _process_single_task(self, task, index, total_tasks, workflow_template, output_path, dry_run):
+    def _process_single_task(self, task: dict, index: int, total_tasks: int, workflow_template: dict, output_path: Path, dry_run: bool) -> None:
         project_dir = task["project"]
         img_path = task["image"]
         p_data = task["prompt"]
@@ -135,7 +134,8 @@ class ComfyOrchestrator:
         project_out = output_path / project_dir.name
         project_out.mkdir(parents=True, exist_ok=True)
         
-        clean_stem = img_path.stem.replace("_optimized", "")
+        clean_stem = image_utils.clean_stem(img_path.stem)
+        # Subfolder per image
         image_subfolder_name = clean_stem 
         image_out_dir = project_out / image_subfolder_name
         image_out_dir.mkdir(exist_ok=True)
@@ -147,7 +147,6 @@ class ComfyOrchestrator:
         
         if not comfy_server_filename:
             self.log(f"Skipping due to upload failure (or server unavailable).")
-            # If dry run, maybe continue? But upload failing implies server issue.
             if not dry_run: return
 
         # Step B: Prepare Workflow
@@ -160,13 +159,11 @@ class ComfyOrchestrator:
             current_ratio = image_utils.get_smart_ratio(img_path)
             self.log(f">> Manual Ratio Calculated: {current_ratio}")
 
-        # Update Nodes using Dynamic Mapping
-        # 1. Load Image
+        # Update Nodes
         load_node_id = self.node_mapping.get("LOAD_IMAGE")
         if load_node_id in current_workflow:
             current_workflow[load_node_id]["inputs"]["image"] = comfy_server_filename or unique_filename
         
-        # 2. Prompt / Settings
         prompt_node_id = self.node_mapping.get("GEMINI_PROMPT")
         if prompt_node_id in current_workflow:
             inputs = current_workflow[prompt_node_id]["inputs"]
@@ -174,39 +171,33 @@ class ComfyOrchestrator:
             inputs["resolution"] = self.settings.get("resolution", "1K")
             inputs["aspect_ratio"] = current_ratio
             
-            # Seed
             if self.settings.get("use_random_seed", True):
                 inputs["seed"] = int(time.time() * 1000) % 1000000000
             else:
                 inputs["seed"] = self.settings.get("seed_value", 0)
                 
-            # System Prompt
             sys_prompt = self.settings.get("system_prompt", "")
             if sys_prompt.strip():
                 inputs["system_prompt"] = sys_prompt
         
         # 3. Save Image Prefix
+        # We set a temp prefix; naming.py handles the final filename after download.
         save_node_id = self.node_mapping.get("SAVE_IMAGE")
         if save_node_id in current_workflow:
-            clean_title = p_data['title'].replace("_+_", "+").replace(" + ", "+")
-            prefix = f"{clean_stem}_{clean_title}"
-            current_workflow[save_node_id]["inputs"]["filename_prefix"] = prefix
+            temp_prefix = f"TEMP_{clean_stem}"
+            current_workflow[save_node_id]["inputs"]["filename_prefix"] = temp_prefix
 
         # Step C: Execution / Dry Run
         if dry_run:
             self.log(f">> DRY RUN: Uploaded {unique_filename}")
-            self.log(f">> Ratio: {current_ratio}")
             self.progress_callback((index + 1) / total_tasks * 100)
             time.sleep(0.1)
             return
 
         # LIVE
         api_key = self.settings.get("api_key", "")
-        if not api_key:
-             self.log("ERROR: ComfyUI API Key not set!")
-             return 
-             
         prompt_id = self.api.queue_prompt(current_workflow, api_key)
+        
         if not prompt_id:
             self.log("Failed to queue prompt.")
             return
@@ -216,35 +207,35 @@ class ComfyOrchestrator:
             self.log("Generation failed or timed out.")
             return
         
-        self._download_and_save(img_data_list, image_out_dir, clean_stem, p_data['title'])
+        # Download and Rename to Unified Format
+        # Pass full prompt string for saving
+        saved_file = self._download_and_save(img_data_list, image_out_dir, img_path.stem, p_data['title'], p_data['prompt'])
+        
+        if saved_file:
+             self.preview_callback(str(img_path), str(saved_file), p_data['prompt'])
         
         self.progress_callback((index + 1) / total_tasks * 100)
 
     def _wait_for_completion_managed(self, prompt_id):
-        # Polling logic
         save_node_id = self.node_mapping.get("SAVE_IMAGE")
-        
         while self.is_running:
             hist = self.api.get_history(prompt_id)
             if hist and prompt_id in hist:
                 outputs = hist[prompt_id].get("outputs", {})
                 if save_node_id in outputs:
                     return outputs[save_node_id].get("images", [])
-                # If finished but no images in expected node, check elsewhere or return empty
                 return []
             time.sleep(1)
         return None
 
-    def _download_and_save(self, img_data_list, image_out_dir, clean_stem, raw_title):
+    def _download_and_save(self, img_data_list, image_out_dir, original_stem, prompt_title, prompt_text=None):
+        last_saved = None
         for img_data in img_data_list:
             fname = img_data['filename']
             ext = Path(fname).suffix
             
-            self.log(f">> Debug: Downloading {fname} | Subfolder: {img_data.get('subfolder')} | Type: {img_data.get('type')}")
-            
-            clean_title = raw_title.replace("_+_", "+").replace(" + ", "+")
-            timestamp = int(time.time())
-            target_name = f"{clean_stem}_{clean_title}_{timestamp}{ext}"
+            # Generate Unified Name
+            target_name = naming.generate_filename(original_stem, prompt_title, ext)
             save_path = image_out_dir / target_name
             
             success = self.api.download_image(
@@ -256,3 +247,18 @@ class ComfyOrchestrator:
             
             if success:
                 self.log(f"Saved: {save_path.name}")
+                last_saved = save_path
+                
+                # Save Prompt Text
+                if prompt_text:
+                    txt_name = Path(target_name).stem + ".txt"
+                    txt_path = image_out_dir / txt_name
+                    # Only write if doesn't exist? Or overwrite? 
+                    # GenerationService overwrites. Consistency.
+                    try:
+                        full_log = f"PROMPT:\n{prompt_text}"
+                        txt_path.write_text(full_log, encoding="utf-8")
+                    except Exception as e:
+                        self.log(f"Warning: Failed to save prompt txt: {e}")
+                        
+        return last_saved

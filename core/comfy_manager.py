@@ -4,14 +4,8 @@ import os
 from pathlib import Path
 
 from core.comfy_api import ComfyAPI
+from core.constants import DEFAULT_NODE_MAPPING
 from core.utils import prompt_parser, image_utils
-
-# --- CONFIGURATION ---
-NODE_MAPPING = {
-    "LOAD_IMAGE": "11",
-    "GEMINI_PROMPT": "35",
-    "SAVE_IMAGE": "30"
-}
 
 class ComfyBatchManager:
     """
@@ -62,7 +56,8 @@ class ComfyBatchManager:
             self.log(f"Error: No project folders found in {input_path} (checked for {self.PROMPT_FILENAME}).")
             return
 
-        valid_exts = ('.png', '.jpg', '.jpeg', '.webp')
+        # Use standard supported formats
+        valid_exts = tuple(image_utils.SUPPORTED_IMAGE_FORMATS)
 
         # 3. Workload Calculation
         task_list = [] # List of (project_dir, img_path, prompt_data)
@@ -123,7 +118,7 @@ class ComfyBatchManager:
         project_out = output_path / project_dir.name
         project_out.mkdir(parents=True, exist_ok=True)
         
-        clean_stem = img_path.stem.replace("_optimized", "")
+        clean_stem = image_utils.clean_stem(img_path.stem)
         image_subfolder_name = clean_stem 
         image_out_dir = project_out / image_subfolder_name
         image_out_dir.mkdir(exist_ok=True)
@@ -152,12 +147,12 @@ class ComfyBatchManager:
 
         # Update Nodes
         # 1. Load Image
-        if NODE_MAPPING["LOAD_IMAGE"] in current_workflow:
-            current_workflow[NODE_MAPPING["LOAD_IMAGE"]]["inputs"]["image"] = comfy_server_filename
+        if DEFAULT_NODE_MAPPING["LOAD_IMAGE"] in current_workflow:
+            current_workflow[DEFAULT_NODE_MAPPING["LOAD_IMAGE"]]["inputs"]["image"] = comfy_server_filename
         
         # 2. Prompt / Settings
-        if NODE_MAPPING["GEMINI_PROMPT"] in current_workflow:
-            inputs = current_workflow[NODE_MAPPING["GEMINI_PROMPT"]]["inputs"]
+        if DEFAULT_NODE_MAPPING["GEMINI_PROMPT"] in current_workflow:
+            inputs = current_workflow[DEFAULT_NODE_MAPPING["GEMINI_PROMPT"]]["inputs"]
             inputs["prompt"] = p_data["prompt"]
             inputs["resolution"] = self.settings.get("resolution", "1K")
             inputs["aspect_ratio"] = current_ratio
@@ -174,16 +169,15 @@ class ComfyBatchManager:
                 inputs["system_prompt"] = sys_prompt
         
         # 3. Save Image Prefix
-        if NODE_MAPPING["SAVE_IMAGE"] in current_workflow:
-            clean_title = p_data['title'].replace("_+_", "+").replace(" + ", "+")
-            prefix = f"{clean_stem}_{clean_title}"
-            current_workflow[NODE_MAPPING["SAVE_IMAGE"]]["inputs"]["filename_prefix"] = prefix
+        if DEFAULT_NODE_MAPPING["SAVE_IMAGE"] in current_workflow:
+            temp_prefix = f"TEMP_{clean_stem}"
+            current_workflow[DEFAULT_NODE_MAPPING["SAVE_IMAGE"]]["inputs"]["filename_prefix"] = temp_prefix
 
         # Step C: Execution / Dry Run
         if dry_run:
             self.log(f">> DRY RUN: Uploaded {unique_filename}")
             self.log(f">> Ratio: {current_ratio}")
-            self.log(f">> Seed: {current_workflow.get(NODE_MAPPING['GEMINI_PROMPT'], {}).get('inputs', {}).get('seed')}")
+            self.log(f">> Seed: {current_workflow.get(DEFAULT_NODE_MAPPING['GEMINI_PROMPT'], {}).get('inputs', {}).get('seed')}")
             self.progress_callback((index + 1) / total_tasks * 100)
             time.sleep(0.1)
             return
@@ -215,8 +209,8 @@ class ComfyBatchManager:
             hist = self.api.get_history(prompt_id)
             if hist and prompt_id in hist:
                 outputs = hist[prompt_id].get("outputs", {})
-                if NODE_MAPPING["SAVE_IMAGE"] in outputs:
-                    return outputs[NODE_MAPPING["SAVE_IMAGE"]].get("images", [])
+                if DEFAULT_NODE_MAPPING["SAVE_IMAGE"] in outputs:
+                    return outputs[DEFAULT_NODE_MAPPING["SAVE_IMAGE"]].get("images", [])
                 return []
             time.sleep(1)
         return None
@@ -228,7 +222,8 @@ class ComfyBatchManager:
             
             self.log(f">> Debug: Downloading {fname} | Subfolder: {img_data.get('subfolder')} | Type: {img_data.get('type')}")
             
-            clean_title = raw_title.replace("_+_", "+").replace(" + ", "+")
+            # Generate Unified Name
+            clean_title = image_utils.clean_prompt_title(raw_title)
             timestamp = int(time.time())
             target_name = f"{clean_stem}_{clean_title}_{timestamp}{ext}"
             save_path = image_out_dir / target_name
