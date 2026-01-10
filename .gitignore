@@ -37,3 +37,6 @@ history/
 generated_chat_images/
 _renders/
 data/history/
+
+# Documentation
+docs/
