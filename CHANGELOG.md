@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.3.0] - 2026-01-10
+### Added
+- **Batch Generator Improvements**:
+  - Added option to select output image format (JPG/PNG).
+  - Integrated Daily API Call Counter (RDP Counter) to track usage.
+  - Implemented filename cleanup logic (removed `_+_` and ` + ` patterns).
+- **Constructor UI Overhaul**:
+  - Implemented hierarchical view for seasons and lighting.
+  - Added a new component-based presets system.
+
+### Changed
+- **Core Refactoring**: Major codebase reorganization to improve modularity and maintainability.
+- **Configuration**: Updated `.gitignore` to include `run.bat` and clean up tracked temporary files.
+
+### Fixed
+- **DaVinci Resolve Compatibility**: Fixed PNG saving issue to ensure generated images are correctly recognized by DaVinci Resolve.
+
 ## [1.2.1] - 2026-01-05
 ### Added
 - New Git workflow: multi-branch strategy with `dev` (working branch) and `main` (clean releases).

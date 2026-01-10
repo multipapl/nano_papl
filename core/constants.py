@@ -3,7 +3,7 @@ from pathlib import Path
 
 # Application Metadata
 APP_NAME = "NanoPapl"
-APP_VERSION = "1.3"
+APP_VERSION = "1.3.0"
 WINDOW_TITLE_PREFIX = f"{APP_NAME} v{APP_VERSION} | AI Archviz Automation"
 
 # Configuration Keys
