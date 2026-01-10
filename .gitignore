@@ -18,6 +18,7 @@ logs/
 build/
 dist/
 *.spec
+scripts/
 temp/
 
 # Environment & IDE
