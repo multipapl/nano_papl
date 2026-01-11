@@ -9,11 +9,69 @@ from PySide6.QtGui import QPixmap, QIcon, QColor, QPalette, QPainter, QPainterPa
 # LLMClient now used in worker only
 from core.utils import config_helper
 from core.history_manager import HistoryManager
+from ui.widgets.drag_drop_overlay import DragDropOverlay
 from pathlib import Path
 import datetime
 import os
 
 # --- UI Components ---
+class ChatInputEdit(QTextEdit):
+    """Custom text input with adaptive height"""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setPlaceholderText("Ask the Archviz Director... (Shift+Enter for new line)")
+        self.setFixedHeight(45)
+        self.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {Colors.BG_DARK}; 
+                color: white; 
+                border: 1px solid {Colors.BORDER}; 
+                border-radius: 20px; 
+                padding: 10px;
+            }}
+            QTextEdit:focus {{ border: 1px solid {Colors.ACCENT}; }}
+            QTextEdit:disabled {{ color: {Colors.TEXT_MUTED}; background-color: {Colors.BG_DARKER}; }}
+        """)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.textChanged.connect(self.adjust_height)
+
+    def adjust_height(self):
+        # Calculate ideal height based on document size
+        doc_height = self.document().size().height()
+        margins = self.contentsMargins().top() + self.contentsMargins().bottom() + 20 # padding
+        new_height = max(45, min(200, doc_height + margins))
+        if self.height() != int(new_height):
+            self.setFixedHeight(int(new_height))
+            if new_height >= 200:
+                self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+            else:
+                self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+class ClickableImageLabel(QLabel):
+    """Image label that becomes clickable with hover effect"""
+    imageClicked = Signal(str)  # Emits image path
+    
+    def __init__(self, image_path, pixmap, parent=None):
+        super().__init__(parent)
+        self.image_path = image_path
+        self.setPixmap(pixmap)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet("""
+            ClickableImageLabel {
+                border: 2px solid transparent;
+                border-radius: 4px;
+            }
+            ClickableImageLabel:hover {
+                border: 2px solid #4a90e2;
+            }
+        """)
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self.imageClicked.emit(self.image_path)
+        super().mousePressEvent(event)
+
 class TypingBubble(QFrame):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -67,12 +125,12 @@ class MessageBubble(QFrame):
                 if not path: continue
                 # We show local path if exists, otherwise text placeholder?
                 # If path is 'generated', it might be full path.
-                lbl_img = QLabel()
                 pix = QPixmap(path)
                 if not pix.isNull():
                     if pix.width() > 400:
                         pix = pix.scaledToWidth(400, Qt.SmoothTransformation)
-                    lbl_img.setPixmap(pix)
+                    lbl_img = ClickableImageLabel(path, pix)
+                    lbl_img.imageClicked.connect(self.on_image_clicked)
                     layout.addWidget(lbl_img)
                 else:
                     layout.addWidget(QLabel(f"[Image: {Path(path).name}]"))
@@ -83,6 +141,15 @@ class MessageBubble(QFrame):
             lbl_text.setWordWrap(True)
             lbl_text.setTextInteractionFlags(Qt.TextSelectableByMouse)
             layout.addWidget(lbl_text)
+    
+    def on_image_clicked(self, image_path):
+        """Forward image click to parent TabChat"""
+        # Find parent TabChat and call its method
+        parent = self.parent()
+        while parent and not isinstance(parent, QWidget) or not hasattr(parent, 'handle_dropped_files'):
+            parent = parent.parent()
+        if parent and hasattr(parent, 'handle_dropped_files'):
+            parent.handle_dropped_files([image_path])
 
 # --- Worker Thread ---
 from core.workers.chat_worker import ChatWorker
@@ -234,6 +301,7 @@ class TabChat(QWidget):
         self.combo_res.addItems(["1K (Standard)", "2K (Detailed)", "4K (Ultra High)"])
         self.combo_res.setFixedWidth(120)
         self.combo_res.setStyleSheet(Styles.INPUT_FIELD.replace("padding: 8px;", "padding: 4px;"))
+        self.combo_res.setCurrentIndex(1) # Default to 2K
         config_layout.addWidget(self.combo_res)
 
         # Clear Chat Button
@@ -244,13 +312,18 @@ class TabChat(QWidget):
             QPushButton {{ background-color: #333; color: #888; border-radius: 4px; }}
             QPushButton:hover {{ background-color: {Colors.DANGER}; color: white; }}
         """)
+        btn_clear.setCursor(Qt.PointingHandCursor)
         btn_clear.clicked.connect(self.clear_current_chat)
         config_layout.addWidget(btn_clear)
 
         config_layout.addStretch()
 
         btn_folder = QPushButton("📂 Output Folder")
-        btn_folder.setStyleSheet("background-color: #333; color: white; border-radius: 4px; padding: 4px 8px;")
+        btn_folder.setStyleSheet("""
+            QPushButton { background-color: #333; color: white; border-radius: 4px; padding: 4px 8px; }
+            QPushButton:hover { background-color: #505050; }
+        """)
+        btn_folder.setCursor(Qt.PointingHandCursor)
         btn_folder.clicked.connect(self.open_output_folder)
         config_layout.addWidget(btn_folder)
 
@@ -275,31 +348,26 @@ class TabChat(QWidget):
         input_layout = QHBoxLayout(input_frame)
         input_layout.setContentsMargins(10, 10, 10, 10)
 
-        self.btn_attach = QPushButton("📎")
+        self.btn_attach = QPushButton("+")
         self.btn_attach.setFixedSize(40, 40)
         self.btn_attach.setStyleSheet("""
             QPushButton { 
-                background-color: #333; color: white; border-radius: 20px; font-size: 16px;
+                background-color: #333; 
+                color: white; 
+                border-radius: 20px; 
+                font-size: 20px; 
+                font-weight: bold;
+                padding-bottom: 3px;
             }
-            QPushButton:hover { background-color: #444; }
+            QPushButton:hover { background-color: #505050; }
         """)
         self.btn_attach.clicked.connect(self.attach_image)
         input_layout.addWidget(self.btn_attach)
         
         self.current_image_paths = [] 
 
-        self.entry_msg = QTextEdit()
-        self.entry_msg.setPlaceholderText("Ask the Archviz Director... (Shift+Enter for new line)")
-        self.entry_msg.setFixedHeight(45)
-        self.entry_msg.setStyleSheet("""
-            QTextEdit {
-                background-color: #181818; color: white; border: 1px solid #333; border-radius: 20px; padding: 10px;
-            }
-            QTextEdit:focus { border: 1px solid #555; }
-            QTextEdit:disabled { color: #555; background-color: #111; }
-        """)
+        self.entry_msg = ChatInputEdit()
         self.entry_msg.installEventFilter(self)
-        self.entry_msg.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff) # Remove scrollbar artifacts
         input_layout.addWidget(self.entry_msg)
 
         self.btn_send = QPushButton("➤")
@@ -312,6 +380,7 @@ class TabChat(QWidget):
             QPushButton:hover {{ background-color: #2c974b; }}
             QPushButton:disabled {{ background-color: #444; color: #888; }}
         """)
+        self.btn_send.setCursor(Qt.PointingHandCursor)
         self.btn_send.clicked.connect(self.send_message)
         input_layout.addWidget(self.btn_send)
 
@@ -321,6 +390,11 @@ class TabChat(QWidget):
         splitter.addWidget(right_widget)
         splitter.setStretchFactor(0, 0) # Sidebar fixed
         splitter.setStretchFactor(1, 1) # Chat expands
+        
+        # Add drag-and-drop overlay to entire right panel
+        self.drag_overlay = DragDropOverlay(right_widget)
+        self.drag_overlay.filesDropped.connect(self.handle_dropped_files)
+        
         main_layout.addWidget(splitter)
 
     # --- Sidebar & History Logic ---
@@ -576,6 +650,10 @@ class TabChat(QWidget):
     def attach_image(self):
         paths, _ = QFileDialog.getOpenFileNames(self, "Select Images", "", "Images (*.png *.jpg *.jpeg *.webp)")
         if paths:
+            self.handle_dropped_files(paths)
+
+    def handle_dropped_files(self, paths):
+        if paths:
             self.current_image_paths.extend(paths)
             self.update_tray()
 
@@ -583,28 +661,56 @@ class TabChat(QWidget):
         while self.tray_layout.count():
             item = self.tray_layout.takeAt(0)
             if item.widget(): item.widget().deleteLater()
-
         if not self.current_image_paths:
             self.tray_frame.setVisible(False)
-            self.btn_attach.setStyleSheet("background-color: #333; color: white; border-radius: 20px;")
             return
 
         self.tray_frame.setVisible(True)
-        self.btn_attach.setStyleSheet("background-color: #4a90e2; color: white; border-radius: 20px;")
 
         for path in self.current_image_paths:
+            # Container for image + delete button
+            img_container = QWidget()
+            img_layout = QVBoxLayout(img_container)
+            img_layout.setContentsMargins(0, 0, 0, 0)
+            img_layout.setSpacing(2)
+            
+            # Image preview
             lbl = QLabel()
             pix = QPixmap(path).scaled(50, 50, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             lbl.setPixmap(pix)
             lbl.setStyleSheet("border: 1px solid #555; border-radius: 4px;")
-            self.tray_layout.addWidget(lbl)
+            img_layout.addWidget(lbl)
             
-        btn_clear = QPushButton("❌")
-        btn_clear.setFixedSize(20, 20)
-        btn_clear.setStyleSheet("background-color: #d32f2f; color: white; border-radius: 10px; font-size: 10px;")
-        btn_clear.clicked.connect(self.clear_attachments)
-        self.tray_layout.addWidget(btn_clear)
+            # Delete button for this specific image
+            btn_remove = QPushButton("×")
+            btn_remove.setFixedSize(50, 16)
+            btn_remove.setStyleSheet("""
+                QPushButton { 
+                    background-color: #d32f2f; 
+                    color: white; 
+                    border: none;
+                    border-radius: 4px; 
+                    font-size: 12px; 
+                    font-weight: bold;
+                }
+                QPushButton:hover { 
+                    background-color: #f44336; 
+                }
+            """)
+            btn_remove.setCursor(Qt.PointingHandCursor)
+            # Use lambda with default argument to capture current path
+            btn_remove.clicked.connect(lambda checked, p=path: self.remove_attachment(p))
+            img_layout.addWidget(btn_remove)
+            
+            self.tray_layout.addWidget(img_container)
+            
         self.tray_layout.addStretch()
+
+    def remove_attachment(self, path):
+        """Remove specific attachment by path"""
+        if path in self.current_image_paths:
+            self.current_image_paths.remove(path)
+            self.update_tray()
 
     def clear_attachments(self):
         self.current_image_paths = []
