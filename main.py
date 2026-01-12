@@ -21,11 +21,13 @@ from ui.tab_settings import TabSettings
 # config_helper is imported inside tabs or main if needed for window geometry saving
 from core.utils.resource_helper import get_resource_path
 
+from core.constants import WINDOW_TITLE
+
 class NanoPaplApp(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Nano Papl v1.2.1 | AI Archviz Automation")
+        self.setWindowTitle(WINDOW_TITLE)
         self.setWindowIcon(QIcon(get_resource_path(os.path.join("assets", "icon.png"))))
         self.resize(1200, 900)
 
