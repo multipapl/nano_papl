@@ -78,16 +78,33 @@ class TabBatch(BaseTab):
 
         # Shared Params Row
         h_params = QHBoxLayout()
+        h_params.setContentsMargins(0, 0, 0, 0)
+        h_params.setSpacing(10)
+        h_params.setAlignment(Qt.AlignLeft)
         
-        h_params.addWidget(QLabel("Res:"))
+        # Res
+        lbl_res = QLabel("Res:")
+        lbl_res.setFixedWidth(40)
+        lbl_res.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-weight: bold;")
+        h_params.addWidget(lbl_res)
+
         self.combo_res = QComboBox()
+        self.combo_res.setFixedWidth(90)
         self.combo_res.addItems(["1K", "2K", "4K"])
         h_params.addWidget(self.combo_res)
         
-        h_params.addWidget(QLabel("Ratio:"))
+        # Ratio
+        lbl_ratio = QLabel("Ratio:")
+        lbl_ratio.setFixedWidth(40)
+        lbl_ratio.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-weight: bold;")
+        h_params.addWidget(lbl_ratio)
+
         self.combo_ratio = QComboBox()
+        self.combo_ratio.setFixedWidth(90)
         self.combo_ratio.addItems(["Auto", "Manual", "1:1", "16:9", "9:16", "4:5", "3:4"]) 
         h_params.addWidget(self.combo_ratio)
+        
+        h_params.addStretch()
         
         l_config.addLayout(h_params)
         
@@ -102,11 +119,23 @@ class TabBatch(BaseTab):
         l_google.setContentsMargins(0, 0, 0, 0)
         
         h_google = QHBoxLayout()
+        h_google.setContentsMargins(0, 0, 0, 0)
+        h_google.setSpacing(10)
+        h_google.setAlignment(Qt.AlignLeft)
+
         self.lbl_fmt = QLabel("Fmt:")
-        self.combo_fmt = QComboBox()
-        self.combo_fmt.addItems(["PNG", "JPG"])
+        self.lbl_fmt.setFixedWidth(40)
+        self.lbl_fmt.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-weight: bold;")
         h_google.addWidget(self.lbl_fmt)
+
+        self.combo_fmt = QComboBox()
+        self.combo_fmt.setFixedWidth(90)
+        self.combo_fmt.addItems(["PNG", "JPG"])
         h_google.addWidget(self.combo_fmt)
+        
+        # Spacer to align with Ratio column (40 + 90 + spacing)
+        # We want the counter to start where Ratio label starts or slightly after
+        # Just adding the counter here usually works if left-aligned
         
         self.lbl_api_counter = QLabel("RDP: ...")
         self.lbl_api_counter.setStyleSheet(f"color: {Colors.TEXT_MUTED}; font-weight: bold; margin-left: 10px;")
@@ -121,6 +150,10 @@ class TabBatch(BaseTab):
         
         # Seed Row
         h_seed = QHBoxLayout()
+        h_seed.setContentsMargins(0, 0, 0, 0)
+        h_seed.setSpacing(10)
+        h_seed.setAlignment(Qt.AlignLeft)
+        
         self.check_random_seed = QCheckBox("Random Seed")
         self.check_random_seed.setChecked(True)
         self.check_random_seed.toggled.connect(self._toggle_seed_input)
@@ -131,8 +164,8 @@ class TabBatch(BaseTab):
         self.spin_seed.setEnabled(False)
         self.spin_seed.setMinimumWidth(120)
         
-        h_seed.addWidget(self.check_random_seed)
         h_seed.addWidget(self.spin_seed)
+        h_seed.addWidget(self.check_random_seed)
         h_seed.addStretch()
         l_comfy.addLayout(h_seed)
 
