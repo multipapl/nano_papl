@@ -9,21 +9,8 @@ from ui.base_tab import BaseTab
 from ui.widgets.path_selector import PathSelectorWidget
 from ui.styles import Styles
 from core.workers.resizer_worker import ResizerWorker
-from core.utils.image_utils import parse_resolution, validate_resolution
 
-# Empirically Verified Resolution Table (Truth Table)
-RESOLUTION_TABLE = {
-    "1:1":  {"1K": (1024, 1024), "2K": (2048, 2048), "4K": (4096, 4096)},
-    "16:9": {"1K": (1376, 768),  "2K": (2752, 1536), "4K": (5504, 3072)},
-    "9:16": {"1K": (768, 1376),  "2K": (1536, 2752), "4K": (3072, 5504)},
-    "4:3":  {"1K": (1200, 896),  "2K": (2400, 1792), "4K": (4800, 3584)},
-    "3:4":  {"1K": (896, 1200),  "2K": (1792, 2400), "4K": (3584, 4800)},
-    "3:2":  {"1K": (1264, 848),  "2K": (2528, 1696), "4K": (5056, 3392)},
-    "2:3":  {"1K": (848, 1264),  "2K": (1696, 2528), "4K": (3392, 5056)},
-    "5:4":  {"1K": (1152, 928),  "2K": (2304, 1856), "4K": (4608, 3712)},
-    "4:5":  {"1K": (928, 1152),  "2K": (1856, 2304), "4K": (3712, 4608)},
-    "21:9": {"1K": (1584, 672),  "2K": (3168, 1344), "4K": (6336, 2688)}
-}
+from core.config.resolutions import RESOLUTION_TABLE
 
 class TabTools(BaseTab):
     """
@@ -179,20 +166,6 @@ class TabTools(BaseTab):
              return
 
         optimized_plan = []
-        # Defaulting to 1K for validation as it's the base standard usually, 
-        # or we could add a selector. 
-        # Per previous logic, it used the combo box from Batch tab.
-        # I'll default to 1K or make scanning detect best fit? 
-        # Previous code: target_quality = self.combo_res.currentText()
-        # I will fix this by adding a small quality selector or defaulting.
-        # Let's add a small selector to the UI for completeness in next step if needed, 
-        # but for now I'll hardcode '1K' or '2K'? No, better to imply from image size?
-        # Re-reading logic: It finds `best_ratio = min(...)`. `target = RESOLUTION_TABLE[best_ratio][target_quality]`.
-        # So target quality matters. I should add the selector back.
-        # I will assume '1K' for now to keep it simple as per "Validator (64px)" 
-        # usually implies checking against base grid, but `auto_crop` resizes to target.
-        # Let's add the selector to be safe.
-        target_quality = "1K" 
         
         for project_dir in projects:
              for img_file in project_dir.iterdir():
@@ -206,14 +179,32 @@ class TabTools(BaseTab):
                                 p = r_str.split(':')
                                 return int(p[0]) / int(p[1])
                             
+                            # 1. Find best aspect ratio
                             best_ratio = min(RESOLUTION_TABLE.keys(), key=lambda r: abs(curr_ratio - parse_ratio(r)))
-                            target = RESOLUTION_TABLE[best_ratio][target_quality]
+                            
+                            # 2. Find best resolution (1K/2K/4K) based on closest area
+                             # This implementation ensures we stay closest to original quality
+                            available_resolutions = RESOLUTION_TABLE[best_ratio]
+                            original_area = w * h
+                            
+                            best_quality = None
+                            min_diff = float('inf')
+                            
+                            for q_name, (rw, rh) in available_resolutions.items():
+                                r_area = rw * rh
+                                diff = abs(original_area - r_area)
+                                if diff < min_diff:
+                                    min_diff = diff
+                                    best_quality = q_name
+                            
+                            target = available_resolutions[best_quality]
                             
                             optimized_plan.append({
                                 'name': img_file.name,
                                 'path': img_file,
                                 'project_dir': project_dir,
                                 'target': target,
+                                'target_quality': best_quality,
                                 'ratio': best_ratio,
                                 'optimized': (w == target[0] and h == target[1])
                             })
@@ -223,7 +214,7 @@ class TabTools(BaseTab):
         
         ready = len([p for p in optimized_plan if p['optimized']])
         total = len(optimized_plan)
-        report = f"📊 REPORT (Target: {target_quality})\nTotal: {total} | Ready: {ready} | Needs Opt: {total - ready}\n"
+        report = f"📊 REPORT (Auto-Resolution)\nTotal: {total} | Ready: {ready} | Needs Opt: {total - ready}\n"
         
         if total - ready > 0:
             report += "💡 Click 'OPTIMIZE' to fix resolutions."
