@@ -24,7 +24,7 @@ class ModernWindow(FluentWindow):
         super().__init__()
         self.setWindowTitle(constants.WINDOW_TITLE)
         self.setWindowIcon(QIcon("assets/ico.ico"))
-        self.resize(1100, 750)
+        self.resize(1100, 900)
         
         # Centralized initialization (Dependency Injection pattern)
         self._init_managers()
@@ -71,11 +71,15 @@ class ModernWindow(FluentWindow):
         QTimer.singleShot(0, lambda: self.switchTo(self.batch_interface))
 
     def _on_theme_changed(self, theme):
-        """Update the sidebar icon based on current theme"""
+        """Update the sidebar icon and window icon based on current theme"""
         # Toggle icon logic: Show 'Moon' (QUIET_HOURS) when Light, 'Sun' (BRIGHTNESS) when Dark
         # BRIGHTNESS = Sun, QUIET_HOURS = Moon
         icon = FluentIcon.BRIGHTNESS if theme == Theme.DARK else FluentIcon.QUIET_HOURS
         self.theme_toggle.setIcon(icon)
+        
+        # Update window icon based on theme
+        window_icon_path = "assets/ico.ico" if theme == Theme.DARK else "assets/ico_black.ico"
+        self.setWindowIcon(QIcon(window_icon_path))
 
     def _toggle_theme(self):
         """Invoke toggle with a tiny delay to avoid collision with nav panel logic"""

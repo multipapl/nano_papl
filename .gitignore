@@ -43,4 +43,4 @@ data/history/
 # docs/
 docs/TRUTH_TEST_V1/
 legacy/
-assets/ico.png
+assets/*.png
