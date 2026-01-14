@@ -5,6 +5,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QSplitter
 from PySide6.QtCore import Qt, QDate
 
 from qfluentwidgets import ScrollArea, InfoBar, InfoBarPosition, themeColor
+from ui.components import ThemeAwareBackground
 
 # Shared Managers/Utils
 from core.utils import config_helper
@@ -18,7 +19,7 @@ from core.workers.comfy_worker import ComfyWorker
 from ui.widgets.batch.config_panel import ConfigPanel
 from ui.widgets.batch.monitoring_panel import MonitoringPanel
 
-class BatchPage(QWidget):
+class BatchPage(ThemeAwareBackground):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("BatchPage")
@@ -43,13 +44,16 @@ class BatchPage(QWidget):
         self.left_scroll.setWidgetResizable(True)
         from ui.components import get_scroll_style
         self.left_scroll.setStyleSheet(get_scroll_style())
+        self.left_scroll.viewport().setStyleSheet("background: transparent;")
         
         self.config_panel = ConfigPanel()
+        self.config_panel.setStyleSheet("background: transparent;")
         self.left_scroll.setWidget(self.config_panel)
         self.splitter.addWidget(self.left_scroll)
         
         # --- RIGHT COLUMN (Monitor) ---
         self.monitor_panel = MonitoringPanel()
+        self.monitor_panel.setStyleSheet("background: transparent;")
         self.splitter.addWidget(self.monitor_panel)
         
         self.splitter.setStretchFactor(0, 4)

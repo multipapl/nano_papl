@@ -11,6 +11,7 @@ from ui.components import ModernPathSelector, SectionCard
 class ConfigPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setStyleSheet("background: transparent;")
         self._init_ui()
         
     def _init_ui(self):

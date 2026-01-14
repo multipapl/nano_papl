@@ -9,6 +9,7 @@ from ui.widgets.batch.preview import ModernImageCompare
 class MonitoringPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setStyleSheet("background: transparent;")
         self._init_ui()
         
     def _init_ui(self):

@@ -38,7 +38,7 @@ class UIConfig:
     """Design Tokens"""
     BUBBLE_RADIUS = 15
     PADDING_STD = 12
-    FONT_SIZE_MSG = 11
+    FONT_SIZE_MSG = 9  # Changed to pt
     AVATAR_SIZE = 20  # Pixel size for emoji avatar
     MAX_CHAT_IMAGE_WIDTH = 400
 
@@ -141,7 +141,7 @@ class MessageBubble(QWidget):
         self.bubble.setTextInteractionFlags(Qt.TextSelectableByMouse)
         
         bubble_font = self.bubble.font()
-        bubble_font.setPixelSize(UIConfig.FONT_SIZE_MSG)
+        bubble_font.setPointSize(UIConfig.FONT_SIZE_MSG)
         self.bubble.setFont(bubble_font)
         
         if text:
@@ -225,7 +225,7 @@ class TypingBubble(QWidget):
         
         # Italic font for thinking state
         font = self.bubble.font()
-        font.setPixelSize(UIConfig.FONT_SIZE_MSG)
+        font.setPointSize(UIConfig.FONT_SIZE_MSG)
         font.setItalic(True)
         self.bubble.setFont(font)
 
@@ -348,7 +348,7 @@ class NPSearchInput(LineEdit):
         
         # FIX: Set font via QFont, not CSS
         font = self.font()
-        font.setPixelSize(10)
+        font.setPointSize(9)
         self.setFont(font)
         
         self.setStyleSheet("LineEdit { border-radius: 20px; padding: 0 15px; }")

@@ -15,9 +15,12 @@ from qfluentwidgets import (
 from core.utils import config_helper
 from core import constants
 from core.utils.path_provider import PathProvider
-from ui.components import ModernPathSelector, CustomColorSettingCard, get_scroll_style, MessageBox
+from ui.components import (
+    ModernPathSelector, CustomColorSettingCard, get_scroll_style, 
+    MessageBox, ThemeAwareBackground
+)
 
-class SettingsInterface(QWidget):
+class SettingsInterface(ThemeAwareBackground):
     """
     Modular Settings Interface for the application.
     """
@@ -33,9 +36,10 @@ class SettingsInterface(QWidget):
         # Use ScrollArea for settings
         self.scroll = ScrollArea(self)
         self.scroll.setWidgetResizable(True)
-        self.scroll.setStyleSheet(get_scroll_style())
+        self.scroll.viewport().setStyleSheet("background: transparent;")
         
         self.container = QWidget()
+        self.container.setStyleSheet("background: transparent;")
         self.layout = QVBoxLayout(self.container)
         self.layout.setContentsMargins(30, 30, 30, 30)
         self.layout.setSpacing(20)
@@ -60,7 +64,7 @@ class SettingsInterface(QWidget):
     def _init_title(self):
         title = QLabel("Settings")
         font = QFont()
-        font.setPixelSize(22)
+        font.setPointSize(16)
         font.setBold(True)
         title.setFont(font)
         self.layout.addWidget(title)

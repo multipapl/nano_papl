@@ -1,12 +1,16 @@
-
 import sys
 import os
+import contextlib
 import ctypes
+
+# Suppress QFluentWidgets "Tips" message before any other imports
+with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+    from qfluentwidgets import setTheme, Theme
+
 from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QtMsgType, qInstallMessageHandler
 from ui.window import ModernWindow
-from qfluentwidgets import setTheme, Theme
 
 def qt_message_handler(mode, context, message):
     """
