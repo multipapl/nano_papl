@@ -19,19 +19,18 @@ Nano_Papl/
 │   │   ├── comfy_orchestrator.py
 │   │   ├── generation_service.py
 │   │   └── image_resizer_service.py
-│   ├── workers/                # QThread wrappers for async tasks
-│   │   ├── chat_worker.py
-│   │   ├── batch_worker.py
-│   │   └── comfy_worker.py
-│   ├── utils/
-│   │   ├── config_helper.py    # Per-user settings persistence
-│   │   └── resource_helper.py
+│   ├── workers/                # QThread wrappers for async tasks (Worker Signals)
+│   ├── config/                 # Static configuration & constants (Resolutions)
+│   ├── utils/                  # Shared utilities (config_helper)
 │   └── history_manager.py      # Chat session persistence
-└── ui/
-    ├── window.py               # Main FluentWindow (Shell)
-    ├── components.py           # Shared UI primitives (Buttons, Cards, Labels)
-    ├── pages/                  # Tab Orchestrators (Chat, Batch, etc.)
-    └── widgets/                # specialized components (Sidebar, InputArea, etc.)
+├── ui/
+│   ├── window.py               # Main FluentWindow (Shell)
+│   ├── components.py           # Design Tokens (UIConfig) & Shared primitives
+│   ├── pages/                  # Tab Orchestrators (Chat, Batch, etc.)
+│   └── widgets/                # specialized components (Sidebar, InputArea, etc.)
+└── tests/                      # Unified Test Suite
+    ├── core/                   # Logic and service tests
+    └── ui/                     # Widget interaction and theme tests
 ```
 
 ## 2. Core Patterns
@@ -45,12 +44,20 @@ Every page (e.g., `ChatInterface`) is just a container that orchestrates multipl
 ### 💉 Dependency Injection
 The `ModernWindow` (in `ui/window.py`) initializes shared managers (`HistoryManager`, `Config`) and "injects" them into the pages during instantiation. This ensures a single source of truth and easier testing.
 
+### 🎨 Centralized Design System
+All visual properties (colors, borders, dimensions) are centralized in `ui/components.py:UIConfig`. 
+- **Tokens**: Use semantic tokens like `UIConfig.CONTAINER_BG_DARK`.
+- **Theming**: Theme initialization and adaptive logic live purely in the `ui/` layer.
+
 ### 🧵 Async Execution (Workers)
 Never run heavy logic (API calls, file I/O) in the main UI thread. 
 - Use classes from `core/workers/`.
 - Connect signals (`response_signal`, `progress_signal`) to UI update slots.
 
-## 3. Data Persistence
+## 3. Testing Philosophy
+The project maintains a high coverage of both logic and interface.
+- **Core Tests**: Verify business logic (Prompt Generation, Orchestration) using deep mocks.
+- **UI Tests**: Use `pytest-qt` to verify widget state changes and theme responsiveness.
 
 | Data Type | Storage | Manager |
 | :--- | :--- | :--- |

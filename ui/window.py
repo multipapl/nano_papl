@@ -13,6 +13,7 @@ from ui.pages.chat_page import ChatInterface
 from ui.pages.constructor_page import ConstructorPage
 from ui.pages.tools_page import ToolsPage
 from ui.pages.batch_page import BatchPage
+from ui.components import UIConfig
 
 # Import managers for dependency injection
 from core.history_manager import HistoryManager
@@ -90,11 +91,11 @@ class ModernWindow(FluentWindow):
         new_theme = Theme.LIGHT if qconfig.theme == Theme.DARK else Theme.DARK
         setTheme(new_theme)
         
-        # Respect accent colors from Settings logic
-        if new_theme == Theme.DARK:
-            saved_color = config_helper.get_value("theme_color_dark", "#4cc2ff")
-        else:
-            saved_color = config_helper.get_value("theme_color_light", "#0078d4")
+        # Load unified theme color, fallback to theme-specific defaults
+        default_color = UIConfig.ACCENT_DEFAULT_DARK if new_theme == Theme.DARK else UIConfig.ACCENT_DEFAULT_LIGHT
+        saved_color = config_helper.get_value("theme_color", 
+                                              config_helper.get_value("theme_color_dark" if new_theme == Theme.DARK else "theme_color_light", 
+                                                                     default_color))
             
         setThemeColor(saved_color)
         qconfig.themeChanged.emit(new_theme)

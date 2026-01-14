@@ -3,7 +3,8 @@ import os
 from PySide6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLabel, QSizePolicy, QFrame
 from PySide6.QtGui import QPixmap, QResizeEvent, QPainter, QColor
 from PySide6.QtCore import Qt, QSize
-from qfluentwidgets import BodyLabel, CaptionLabel, CardWidget
+from qfluentwidgets import BodyLabel, CaptionLabel, CardWidget, isDarkTheme
+from ui.components import UIConfig
 
 class ResizingLabel(QLabel):
     def __init__(self, placeholder="Waiting...", parent=None):
@@ -15,7 +16,9 @@ class ResizingLabel(QLabel):
         self._pixmap = None
         self.current_path = None
         self.setCursor(Qt.PointingHandCursor)
-        self.setStyleSheet("color: #888; font-style: italic;")
+        dark = isDarkTheme()
+        secondary = UIConfig.TEXT_SECONDARY_DARK if dark else UIConfig.TEXT_SECONDARY_LIGHT
+        self.setStyleSheet(f"color: {secondary}; font-style: italic;")
 
     def setPixmap(self, pixmap):
         self._pixmap = pixmap
@@ -74,7 +77,9 @@ class ModernImageCompare(CardWidget):
 
         # Input Wrapper
         in_frame = QFrame()
-        in_frame.setStyleSheet("background: rgba(0,0,0,0.1); border-radius: 8px;")
+        dark = isDarkTheme()
+        bg = UIConfig.CARD_BG_DARK if dark else UIConfig.CARD_BG_LIGHT
+        in_frame.setStyleSheet(f"background: {bg}; border-radius: 8px;")
         l_in = QVBoxLayout(in_frame)
         l_in.setContentsMargins(5, 5, 5, 5)
         self.lbl_input = ResizingLabel("Input Image")
@@ -83,12 +88,13 @@ class ModernImageCompare(CardWidget):
         # Arrow
         self.lbl_arrow = QLabel("➡")
         self.lbl_arrow.setAlignment(Qt.AlignCenter)
-        self.lbl_arrow.setStyleSheet("font-size: 24px; color: #888;")
+        secondary = UIConfig.TEXT_SECONDARY_DARK if dark else UIConfig.TEXT_SECONDARY_LIGHT
+        self.lbl_arrow.setStyleSheet(f"font-size: 24px; color: {secondary};")
         self.lbl_arrow.setFixedWidth(30)
 
         # Output Wrapper
         out_frame = QFrame()
-        out_frame.setStyleSheet("background: rgba(0,0,0,0.1); border-radius: 8px;")
+        out_frame.setStyleSheet(f"background: {bg}; border-radius: 8px;")
         l_out = QVBoxLayout(out_frame)
         l_out.setContentsMargins(5, 5, 5, 5)
         self.lbl_output = ResizingLabel("Generated Output")

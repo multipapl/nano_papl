@@ -57,7 +57,7 @@ def main():
     app.setFont(font)
 
     # Set Theme (Dark by default) + Global Accent Color
-    from core.theme_init import init_theme
+    from ui.components import init_theme
     init_theme()
     
     window = ModernWindow()

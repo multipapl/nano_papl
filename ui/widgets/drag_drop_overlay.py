@@ -1,5 +1,5 @@
 from PySide6.QtWidgets import QWidget
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt, Signal, QEvent
 from PySide6.QtGui import QPainter, QColor, QPen
 from qfluentwidgets import themeColor
 import os
@@ -31,10 +31,10 @@ class DragDropOverlay(QWidget):
 
     def eventFilter(self, obj, event):
         if obj == self.parent():
-            if event.type() == event.Type.Resize:
+            if event.type() == QEvent.Resize:
                 self.setGeometry(obj.rect())
             
-            elif event.type() == event.Type.DragEnter:
+            elif event.type() == QEvent.DragEnter:
                 if event.mimeData().hasUrls():
                     self._drag_active = True
                     self.show()
@@ -42,16 +42,16 @@ class DragDropOverlay(QWidget):
                     event.acceptProposedAction()
                     return True
             
-            elif event.type() == event.Type.DragMove:
+            elif event.type() == QEvent.DragMove:
                 if self._drag_active:
                     event.acceptProposedAction()
                     return True
             
-            elif event.type() == event.Type.DragLeave:
+            elif event.type() == QEvent.DragLeave:
                 self._drag_active = False
                 self.hide()
                 
-            elif event.type() == event.Type.Drop:
+            elif event.type() == QEvent.Drop:
                 if self._drag_active:
                     paths = []
                     for url in event.mimeData().urls():

@@ -180,6 +180,7 @@ class BatchPage(ThemeAwareBackground):
         self._update_api_label(data["count"])
 
     def _update_api_label(self, count):
+        from ui.components import UIConfig
         self.config_panel.lbl_api_counter.setText(f"RDP Daily Usage: {count}/{self.api_limit}")
-        color = themeColor().name() if count < self.api_limit else "#d32f2f"
+        color = themeColor().name() if count < self.api_limit else UIConfig.DANGER_COLOR
         self.config_panel.lbl_api_counter.setStyleSheet(f"color: {color}; font-weight: bold;")

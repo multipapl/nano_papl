@@ -66,6 +66,15 @@ class ChatMessageArea(ThemeAwareBackground):
             
         QTimer.singleShot(50, self.scroll_to_bottom)
 
+    def message_count(self) -> int:
+        """Returns the number of message bubbles (excluding stretch and typing indicator)"""
+        count = 0
+        for i in range(self.container_layout.count()):
+            widget = self.container_layout.itemAt(i).widget()
+            if widget and isinstance(widget, MessageBubble):
+                count += 1
+        return count
+
     def clear(self) -> None:
         """Clear all messages"""
         while self.container_layout.count() > 1: # Keep the stretch

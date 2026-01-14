@@ -11,6 +11,23 @@ from qfluentwidgets import (
 import os
 from core.utils import config_helper
 
+def init_theme():
+    """
+    Initialize global application theme settings.
+    - Sets theme from config or defaults to Dark.
+    - Applies unified accent color.
+    """
+    # Force dark for now as per previous logic, or load from config if we add it later
+    setTheme(Theme.DARK)
+    
+    dark = isDarkTheme()
+    # Use the same logic as in MessageBubble but for global initialization
+    default_color = "#4cc2ff" # Sky blue
+    saved_color = config_helper.get_value("theme_color", 
+                                          config_helper.get_value("theme_color_dark" if dark else "theme_color_light", 
+                                                                 default_color))
+    setThemeColor(saved_color)
+
 # --- Native Theme-Aware Backgrounds ---
 
 class ThemeAwareBackground(QWidget):
@@ -22,15 +39,18 @@ class ThemeAwareBackground(QWidget):
     """
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        # Fluent Design colors
-        self.light_bg = QColor("#ffffff")
-        self.dark_bg = QColor("#272727")  # Slightly lighter than pure black
+        # Fluent Design colors from tokens
+        self.light_bg = QColor(UIConfig.CONTAINER_BG_LIGHT)
+        self.dark_bg = QColor(UIConfig.CONTAINER_BG_DARK)
         qconfig.themeChanged.connect(self.update)
 
     def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setPen(Qt.NoPen)
-        painter.setBrush(self.dark_bg if isDarkTheme() else self.light_bg)
+        # Re-fetch for safety or use cached QColors
+        dark = isDarkTheme()
+        color = QColor(UIConfig.CONTAINER_BG_DARK if dark else UIConfig.CONTAINER_BG_LIGHT)
+        painter.setBrush(color)
         painter.drawRect(self.rect())
 
 # --- centralized configuration ---
@@ -38,9 +58,45 @@ class UIConfig:
     """Design Tokens"""
     BUBBLE_RADIUS = 15
     PADDING_STD = 12
-    FONT_SIZE_MSG = 9  # Changed to pt
-    AVATAR_SIZE = 20  # Pixel size for emoji avatar
+    FONT_SIZE_MSG = 9
+    AVATAR_SIZE = 20
     MAX_CHAT_IMAGE_WIDTH = 400
+    
+    # Color Tokens (Semantics) - Official Windows 11 / Fluent Palette
+    AI_BUBBLE_BG_DARK = "#2d2d2d"
+    AI_BUBBLE_BG_LIGHT = "#f5f5f5"
+    
+    ACCENT_DEFAULT_DARK = "#4cc2ff"
+    ACCENT_DEFAULT_LIGHT = "#0078d4"
+    
+    # Generic Containers (Fluent Layer 0)
+    CONTAINER_BG_DARK = "#202020"    # Official Deep Dark
+    CONTAINER_BG_LIGHT = "#f3f3f3"   # Official Subtle Light
+    
+    # Cards / Surfaces (Fluent Layer 1)
+    CARD_BG_DARK = "rgba(255, 255, 255, 0.04)"
+    CARD_BG_LIGHT = "rgba(255, 255, 255, 0.7)"
+    
+    BORDER_SUBTLE_DARK = "rgba(255, 255, 255, 0.08)"
+    BORDER_SUBTLE_LIGHT = "rgba(0, 0, 0, 0.06)"
+    
+    BORDER_HOVER_DARK = "rgba(255, 255, 255, 0.2)"
+    BORDER_HOVER_LIGHT = "rgba(0, 0, 0, 0.2)"
+    
+    # Interactive Overlays
+    OVERLAY_HOVER_DARK = "rgba(255, 255, 255, 0.1)"
+    OVERLAY_HOVER_LIGHT = "rgba(0, 0, 0, 0.1)"
+    OVERLAY_PRESSED_DARK = "rgba(255, 255, 255, 0.2)"
+    OVERLAY_PRESSED_LIGHT = "rgba(0, 0, 0, 0.2)"
+    
+    TEXT_SECONDARY_DARK = "rgba(255, 255, 255, 0.6)"
+    TEXT_SECONDARY_LIGHT = "rgba(0, 0, 0, 0.6)"
+    
+    DANGER_COLOR = "#d32f2f"  # Red for removal/error
+    DANGER_HOVER = "#f44336"
+    
+    # Layout Tokens
+    LABEL_MIN_WIDTH = 60
 
 # --- Reusable Components (Factory Pattern) ---
 
@@ -181,13 +237,14 @@ class MessageBubble(QWidget):
         
         if self.is_user:
             # FIX: Use raw color from config to avoid library distortion/saturation fixes
-            raw_color = config_helper.get_value("theme_color_dark" if dark else "theme_color_light", "#4cc2ff")
+            default_color = "#4cc2ff"
+            raw_color = config_helper.get_value("theme_color", default_color)
             bg_color = raw_color if not dark else QColor(raw_color).darker(115).name()
             text_color = "#000000"  # Black for better contrast on accent backgrounds
             align_sheet = "border-bottom-right-radius: 2px;"
         else:
             # AI Bubble: Distinct solid surface colors
-            bg_color = "#2d2d2d" if dark else "#f5f5f5"
+            bg_color = UIConfig.AI_BUBBLE_BG_DARK if dark else UIConfig.AI_BUBBLE_BG_LIGHT
             text_color = "#ffffff" if dark else "#1f1f1f"
             align_sheet = "border-bottom-left-radius: 2px;"
         
@@ -231,7 +288,7 @@ class TypingBubble(QWidget):
 
         # Style
         dark = isDarkTheme()
-        bg_color = "#2d2d2d" if dark else "#f5f5f5"
+        bg_color = UIConfig.AI_BUBBLE_BG_DARK if dark else UIConfig.AI_BUBBLE_BG_LIGHT
         text_color = "rgba(255, 255, 255, 0.6)" if dark else "rgba(0, 0, 0, 0.5)"
         
         self.bubble.setStyleSheet(f"""
@@ -264,30 +321,33 @@ class AttachmentTrayItem(QWidget):
 
         # Image preview
         self.lbl = QLabel()
+        self.lbl.setFixedSize(60, 60)
         pix = QPixmap(path).scaled(60, 60, Qt.KeepAspectRatio, Qt.SmoothTransformation)
         self.lbl.setPixmap(pix)
-        self.lbl.setFixedSize(60, 60)
-        self.lbl.setAlignment(Qt.AlignCenter)
-        self.lbl.setStyleSheet("border: 1px solid rgba(128, 128, 128, 0.3); border-radius: 6px; background: rgba(0,0,0,0.1);")
+        self.lbl.setAlignment(Qt.AlignBottom | Qt.AlignHCenter)
+        dark = isDarkTheme()
+        bg = UIConfig.CARD_BG_DARK if dark else UIConfig.CARD_BG_LIGHT
+        border = UIConfig.BORDER_SUBTLE_DARK if dark else UIConfig.BORDER_SUBTLE_LIGHT
+        self.lbl.setStyleSheet(f"border: 1px solid {border}; border-radius: 6px; background: {bg};")
         layout.addWidget(self.lbl, 0, Qt.AlignCenter)
 
         # Remove button
-        self.btn_remove = QPushButton("×")
+        self.btn_remove = PushButton("×")
         self.btn_remove.setFixedSize(60, 18)
         self.btn_remove.setCursor(Qt.PointingHandCursor)
         self.btn_remove.clicked.connect(lambda: self.removed.emit(self.path))
         
         # Style button
-        self.btn_remove.setStyleSheet("""
-            QPushButton {
-                background-color: #d32f2f;
+        self.btn_remove.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {UIConfig.DANGER_COLOR};
                 color: white;
                 border: none;
                 border-radius: 4px;
                 font-size: 11px;
                 font-weight: bold;
-            }
-            QPushButton:hover { background-color: #f44336; }
+            }}
+            QPushButton:hover {{ background-color: {UIConfig.DANGER_HOVER}; }}
         """)
         layout.addWidget(self.btn_remove, 0, Qt.AlignCenter)
 
@@ -535,7 +595,7 @@ def get_scroll_style(dark=None):
     if dark is None:
         dark = isDarkTheme()
     
-    line_color = "rgba(255, 255, 255, 0.1)" if dark else "rgba(0, 0, 0, 0.1)"
+    line_color = UIConfig.BORDER_SUBTLE_DARK if dark else UIConfig.BORDER_SUBTLE_LIGHT
     return f"""
         QScrollArea {{ 
             border: none; 

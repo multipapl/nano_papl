@@ -3,7 +3,7 @@ from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame
 from PySide6.QtCore import Qt, Signal
 from qfluentwidgets import TransparentPushButton, FluentIcon
 
-from ui.components import AttachmentTrayItem
+from ui.components import AttachmentTrayItem, UIConfig
 from ui.widgets.chat import ChatInputArea
 from ui.widgets.drag_drop_overlay import DragDropOverlay
 
@@ -31,7 +31,7 @@ class ChatControlPanel(QWidget):
         self.input_separator = QFrame(self)
         self.input_separator.setFrameShape(QFrame.HLine)
         self.input_separator.setFixedHeight(1)
-        self.input_separator.setStyleSheet("background-color: rgba(255, 255, 255, 0.1); border: none;")
+        self.input_separator.setStyleSheet(f"background-color: {UIConfig.BORDER_SUBTLE_DARK}; border: none;")
         self.layout.addWidget(self.input_separator)
         
         # 2. Attachment Tray
@@ -39,7 +39,7 @@ class ChatControlPanel(QWidget):
         self.tray_layout = QHBoxLayout(self.tray_frame)
         self.tray_layout.setContentsMargins(20, 8, 20, 8)
         self.tray_layout.setSpacing(8)
-        self.tray_layout.setAlignment(Qt.AlignLeft)
+        self.tray_layout.setAlignment(Qt.AlignLeft | Qt.AlignBottom)
         self.tray_frame.setVisible(False)
         self.layout.addWidget(self.tray_frame)
         
@@ -123,6 +123,6 @@ class ChatControlPanel(QWidget):
         return self.input_area.get_chat_config()
 
     def update_theme_style(self, dark: bool):
-        line_color = "rgba(255, 255, 255, 0.1)" if dark else "rgba(0, 0, 0, 0.1)"
+        line_color = UIConfig.BORDER_SUBTLE_DARK if dark else UIConfig.BORDER_SUBTLE_LIGHT
         self.input_separator.setStyleSheet(f"background-color: {line_color}; border: none;")
         # ChatInputArea handles its own theme

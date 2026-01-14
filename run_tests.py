@@ -1,48 +1,19 @@
-import subprocess
+import pytest
 import sys
-import webbrowser
-from pathlib import Path
+import os
 
-def run_tests():
-    print("="*60)
-    print("Running NanoPapl Test Suite")
-    print("="*60)
-
-    # 1. Run Core & UI Unit Tests with Coverage
-    print("\n[1/3] Running Unit Tests (Core & UI)...")
-    exit_code_pytest = subprocess.call([
-        sys.executable, "-m", "pytest",
-        "--cov=core", "--cov=ui", "--cov-report=html:cov_html", 
-        "tests/"
-    ])
-
-    if exit_code_pytest != 0:
-        print("\n!!! Unit Tests FAILED !!!")
-        # We don't exit yet, we want to see integration results if possible or stop here.
-        # Usually stop on unit failure.
-        return exit_code_pytest
-
-    # 2. Run Integration Smoke Test
-    print("\n[2/3] Running Integration Smoke Tests...")
-    exit_code_integration = subprocess.call([
-        sys.executable, "tests/run_integration_check.py"
-    ])
-
-    if exit_code_integration != 0:
-        print("\n!!! Integration Tests FAILED !!!")
-        return exit_code_integration
-
-    print("\n" + "="*60)
-    print("ALL TESTS PASSED")
-    print("="*60)
+def main():
+    """Скрипт для запуску тестів прямо з Python."""
+    # Додаємо корінь проекту в шлях
+    sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
     
-    # 3. Open Report
-    report_path = Path("cov_html/index.html").absolute()
-    if report_path.exists():
-        print(f"Opening coverage report: {report_path}")
-        webbrowser.open(report_path.as_uri())
+    print("Запуск тестів Nano_Papl...")
+    # Викликаємо pytest з аргументами
+    # -v: verbose
+    # tests/: папка з тестами
+    retcode = pytest.main(["-v", "tests/"])
     
-    return 0
+    sys.exit(retcode)
 
 if __name__ == "__main__":
-    sys.exit(run_tests())
+    main()

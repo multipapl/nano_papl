@@ -11,7 +11,7 @@ from qfluentwidgets import MessageBox, qconfig
 from ui.widgets.chat import ChatSidebar
 from ui.widgets.chat.message_display import ChatMessageDisplay
 from ui.widgets.chat.control_panel import ChatControlPanel
-from ui.components import InputDialog
+from ui.components import InputDialog, UIConfig
 
 # Managers & Core
 from core.workers.chat_worker import ChatWorker
@@ -143,6 +143,10 @@ class ChatInterface(QWidget):
         self.control_panel.set_chat_config(data.get("settings", {}))
         QTimer.singleShot(100, self.message_display.scroll_to_bottom)
 
+    def handle_dropped_files(self, paths: List[str]):
+        """Delegate attachment handling to control panel"""
+        self.control_panel.handle_dropped_files(paths)
+
     # --- Core Logic ---
 
     def on_send_clicked(self, text: str, config: dict) -> None:
@@ -232,7 +236,7 @@ class ChatInterface(QWidget):
 
     def _apply_theme_style(self):
         dark = qconfig.theme == Qt.Dark
-        line_color = "rgba(255, 255, 255, 0.1)" if dark else "rgba(0, 0, 0, 0.1)"
+        line_color = UIConfig.BORDER_SUBTLE_DARK if dark else UIConfig.BORDER_SUBTLE_LIGHT
         self.splitter.setStyleSheet(f"QSplitter::handle {{ background-color: {line_color}; width: 1px; }}")
         self.control_panel.update_theme_style(dark)
 

@@ -25,8 +25,10 @@ def __init__(self, history_manager: HistoryManager, parent=None):
 
 ### C. Native Theming
 - **No hardcoded CSS**: Avoid `setStyleSheet("background: #272727")`.
-- **Theme Connection**: Connect to `qconfig.themeChanged` to update custom colors.
-- **Components**: Use `ui.components` primitives (e.g., `NPButton`, `SectionCard`).
+- **Design Tokens**: Use `ui.components:UIConfig` for all colors and dimensions.
+  - *Example*: `self.setStyleSheet(f"background: {UIConfig.CARD_BG_DARK}")`
+- **Theme Connection**: Containers should inherit from `ThemeAwareBackground`.
+- **Shared Components**: Use `ui.components` primitives (e.g., `NPButton`, `SectionCard`).
 
 ---
 
@@ -51,7 +53,26 @@ The UI thread must **never block**. All API calls or heavy processing must use `
 
 ---
 
-## 4. Best Practices Summary (The "LEGO" Rule)
+---
+
+## 5. Testing Standards
+
+We maintain two test suites in the `tests/` directory.
+
+### A. Execution
+Always use the root test runner to ensure environment parity:
+```powershell
+python run_tests.py
+```
+
+### B. Methodology
+- **Mocks**: When testing services, mock the `genai.Client` and `ComfyAPI` to avoid external dependencies.
+- **Path Isolation**: Use `pytest` fixture `tmp_path` for all file operations.
+- **Verification**: UI tests must verify both state changes and theme-adaptive styling.
+
+---
+
+## 6. Best Practices Summary (The "LEGO" Rule)
 
 - widgets are **bricks** (UI + Small State).
 - pages are **instructions** (Orchestrating bricks).

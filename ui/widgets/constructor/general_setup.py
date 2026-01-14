@@ -1,7 +1,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFormLayout
 from PySide6.QtCore import Qt
 from qfluentwidgets import LineEdit, ComboBox, ToolButton, BodyLabel, FluentIcon
-from ui.components import ThemeAwareBackground, SectionCard, AdaptiveTextEdit
+from ui.components import ThemeAwareBackground, SectionCard, AdaptiveTextEdit, UIConfig
 
 class GeneralSetupWidget(QWidget):
     """
@@ -40,7 +40,7 @@ class GeneralSetupWidget(QWidget):
         self.entry_name.setPlaceholderText("New_Project")
         self.entry_name.setClearButtonEnabled(True)
         lbl_name = BodyLabel("Name:")
-        lbl_name.setFixedWidth(50)
+        lbl_name.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_p1.addRow(lbl_name, self.entry_name)
         h_proj.addLayout(form_p1, 1)
 
@@ -50,7 +50,7 @@ class GeneralSetupWidget(QWidget):
         self.entry_ctx.setPlaceholderText("Context/Location...")
         self.entry_ctx.setClearButtonEnabled(True)
         lbl_loc = BodyLabel("Loc:")
-        lbl_loc.setFixedWidth(50)
+        lbl_loc.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_p2.addRow(lbl_loc, self.entry_ctx)
         h_proj.addLayout(form_p2, 1)
         
@@ -68,7 +68,7 @@ class GeneralSetupWidget(QWidget):
         self.combo_type.addItems(list(self.data.get("input_types", {}).keys()))
         self.combo_type.currentTextChanged.connect(self.update_base_text)
         lbl_input = BodyLabel("Input:")
-        lbl_input.setFixedWidth(50)
+        lbl_input.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_s1.addRow(lbl_input, self.combo_type)
         h_sel.addLayout(form_s1, 1)
 
@@ -78,7 +78,7 @@ class GeneralSetupWidget(QWidget):
         self.combo_cat.addItems(list(self.data.get("scene_types", {}).keys()))
         self.combo_cat.currentTextChanged.connect(self.update_base_text)
         lbl_type = BodyLabel("Type:")
-        lbl_type.setFixedWidth(50)
+        lbl_type.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_s2.addRow(lbl_type, self.combo_cat)
         h_sel.addLayout(form_s2, 1)
         

@@ -17,7 +17,7 @@ from core import constants
 from core.utils.path_provider import PathProvider
 from ui.components import (
     ModernPathSelector, CustomColorSettingCard, get_scroll_style, 
-    MessageBox, ThemeAwareBackground
+    MessageBox, ThemeAwareBackground, UIConfig
 )
 
 class SettingsInterface(ThemeAwareBackground):
@@ -119,9 +119,9 @@ class SettingsInterface(ThemeAwareBackground):
         group.addSettingCard(self.theme_card)
 
         # Color
-        dark = isDarkTheme()
-        saved_color = config_helper.get_value("theme_color_dark" if dark else "theme_color_light", 
-                                              "#4cc2ff" if dark else "#0078d4")
+        saved_color = config_helper.get_value("theme_color", 
+                                              config_helper.get_value("theme_color_dark" if isDarkTheme() else "theme_color_light", 
+                                                                     UIConfig.ACCENT_DEFAULT_DARK if isDarkTheme() else UIConfig.ACCENT_DEFAULT_LIGHT))
         self.color_card = CustomColorSettingCard(
             QColor(saved_color), FluentIcon.PALETTE,
             "Theme Color", "Accent color for the current theme", self
@@ -238,22 +238,20 @@ class SettingsInterface(ThemeAwareBackground):
         new_theme = Theme.DARK if checked else Theme.LIGHT
         setTheme(new_theme)
         
-        color_key = "theme_color_dark" if checked else "theme_color_light"
-        def_color = "#4cc2ff" if checked else "#0078d4"
-        saved_color = config_helper.get_value(color_key, def_color)
+        # maintain existing accent color when toggling theme
+        current_color = self.color_card.colorPicker.color
+        setThemeColor(current_color)
         
-        setThemeColor(saved_color)
-        self.color_card.colorPicker.setColor(QColor(saved_color))
         qconfig.themeChanged.emit(new_theme)
 
     def on_color_changed(self, color):
         setThemeColor(color)
-        key = "theme_color_dark" if isDarkTheme() else "theme_color_light"
-        config_helper.set_value(key, color.name())
+        config_helper.set_value("theme_color", color.name())
         qconfig.themeChanged.emit(qconfig.theme)
 
     def reset_theme_color(self):
-        default = "#4cc2ff" if isDarkTheme() else "#0078d4"
+        dark = isDarkTheme()
+        default = UIConfig.ACCENT_DEFAULT_DARK if dark else UIConfig.ACCENT_DEFAULT_LIGHT
         self.on_color_changed(QColor(default))
         self.color_card.colorPicker.setColor(QColor(default))
 
@@ -264,8 +262,9 @@ class SettingsInterface(ThemeAwareBackground):
         self.scroll.setStyleSheet(get_scroll_style())
         
         dark = isDarkTheme()
-        saved = config_helper.get_value("theme_color_dark" if dark else "theme_color_light", 
-                                       "#4cc2ff" if dark else "#0078d4")
+        saved = config_helper.get_value("theme_color", 
+                                       config_helper.get_value("theme_color_dark" if dark else "theme_color_light", 
+                                                              UIConfig.ACCENT_DEFAULT_DARK if dark else UIConfig.ACCENT_DEFAULT_LIGHT))
         self.color_card.colorPicker.setColor(QColor(saved))
 
     def _show_success(self, text):

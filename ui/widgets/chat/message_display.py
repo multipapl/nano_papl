@@ -42,6 +42,9 @@ class ChatMessageDisplay(ThemeAwareBackground):
     def add_ai_message(self, text: str, image_paths: Optional[list[str]] = None):
         self.chat_area.add_ai_message(text, image_paths)
 
+    def message_count(self) -> int:
+        return self.chat_area.message_count()
+
     def show_typing_indicator(self, visible: bool):
         self.chat_area.show_typing_indicator(visible)
 

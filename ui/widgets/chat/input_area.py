@@ -9,7 +9,7 @@ from qfluentwidgets import (
     ComboBox
 )
 
-from ui.components import ChatTextEdit
+from ui.components import ChatTextEdit, UIConfig
 from core.utils import config_helper
 
 class ChatInputArea(QFrame):
@@ -280,14 +280,11 @@ class ChatInputArea(QFrame):
 
     def _apply_container_style(self):
         dark = isDarkTheme()
-        if dark:
-            bg = "rgba(43, 43, 43, 1)"
-            border = "rgba(255, 255, 255, 0.1)"
-            hover_border = "rgba(255, 255, 255, 0.2)"
-        else:
-            bg = "rgba(255, 255, 255, 1)"
-            border = "rgba(0, 0, 0, 0.1)"
-            hover_border = "rgba(0, 0, 0, 0.2)"
+        bg = UIConfig.CONTAINER_BG_DARK if dark else UIConfig.CONTAINER_BG_LIGHT
+        border = UIConfig.BORDER_SUBTLE_DARK if dark else UIConfig.BORDER_SUBTLE_LIGHT
+        
+        # Slightly more prominent border on hover
+        hover_border = UIConfig.BORDER_HOVER_DARK if dark else UIConfig.BORDER_HOVER_LIGHT
         
         self.setStyleSheet(f"""
             QFrame#ChatInputContainer {{
@@ -301,7 +298,7 @@ class ChatInputArea(QFrame):
         """)
         
         # Separator Style
-        sep_color = "rgba(255, 255, 255, 0.1)" if dark else "rgba(0, 0, 0, 0.08)"
+        sep_color = UIConfig.BORDER_SUBTLE_DARK if dark else UIConfig.BORDER_SUBTLE_LIGHT
         self.separator.setStyleSheet(f"background-color: {sep_color}; border: none;")
         self.v_sep.setStyleSheet(f"background-color: {sep_color}; border: none;")
 
@@ -311,19 +308,18 @@ class ChatInputArea(QFrame):
 
     def _apply_send_button_style(self):
         dark = isDarkTheme()
-        # FIX: Use raw color from config for perfect fidelity
-        primary = config_helper.get_value("theme_color_dark" if dark else "theme_color_light", "#4cc2ff")
+        # FIX: Use tokens for defaults
+        default_color = UIConfig.ACCENT_DEFAULT_DARK if dark else UIConfig.ACCENT_DEFAULT_LIGHT
+        primary = config_helper.get_value("theme_color", 
+                                         config_helper.get_value("theme_color_dark" if dark else "theme_color_light", 
+                                                                default_color))
         
         # Set icon color explicitly to black as requested by user
         from PySide6.QtGui import QColor
         self.btn_send.setIcon(FluentIcon.SEND.icon(color=QColor(Qt.black)))
         
-        if dark:
-            hover = "rgba(255, 255, 255, 0.1)"
-            pressed = "rgba(255, 255, 255, 0.05)"
-        else:
-            hover = "rgba(0, 0, 0, 0.1)"
-            pressed = "rgba(0, 0, 0, 0.05)"
+        hover = UIConfig.OVERLAY_HOVER_DARK if dark else UIConfig.OVERLAY_HOVER_LIGHT
+        pressed = UIConfig.OVERLAY_PRESSED_DARK if dark else UIConfig.OVERLAY_PRESSED_LIGHT
         
         self.btn_send.setStyleSheet(f"""
             ToolButton {{

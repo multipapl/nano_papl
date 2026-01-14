@@ -1,0 +1,46 @@
+import pytest
+import os
+import json
+from unittest.mock import MagicMock, patch
+from core.utils import config_helper
+
+def test_get_value_standard(tmp_path, monkeypatch):
+    """Verify loading standard values from JSON config."""
+    config_file = tmp_path / "config_test.json"
+    config_data = {"data_root": "C:/MockPath", "theme": "Dark"}
+    config_file.write_text(json.dumps(config_data))
+    
+    monkeypatch.setattr(config_helper, "CONFIG_FILE", str(config_file))
+    # Reset internal cache if any (config_helper usually loads on call)
+    
+    assert config_helper.get_value("data_root") == "C:/MockPath"
+    assert config_helper.get_value("theme") == "Dark"
+    assert config_helper.get_value("non_existent", "default") == "default"
+
+def test_set_value_standard(tmp_path, monkeypatch):
+    """Verify saving standard values to JSON config."""
+    config_file = tmp_path / "config_save_test.json"
+    monkeypatch.setattr(config_helper, "CONFIG_FILE", str(config_file))
+    
+    config_helper.set_value("test_key", "test_val")
+    
+    with open(config_file, "r") as f:
+        data = json.load(f)
+        assert data["test_key"] == "test_val"
+
+@patch("core.utils.config_helper.keyring")
+def test_keyring_integration(mock_keyring, tmp_path, monkeypatch):
+    """Verify that sensitive keys are handled via keyring."""
+    config_file = tmp_path / "config_keyring.json"
+    monkeypatch.setattr(config_helper, "CONFIG_FILE", str(config_file))
+    
+    # 1. Set sensitive value
+    mock_keyring.set_password.return_value = None
+    config_helper.set_value("api_key", "secret-123")
+    
+    mock_keyring.set_password.assert_called_with("NanoPapl", "api_key", "secret-123")
+    
+    # 2. Get sensitive value
+    mock_keyring.get_password.return_value = "secret-123"
+    assert config_helper.get_value("api_key") == "secret-123"
+    mock_keyring.get_password.assert_called_with("NanoPapl", "api_key")
