@@ -3,7 +3,7 @@ from pathlib import Path
 
 # Application Metadata
 APP_NAME = "Nano Papl"
-APP_VERSION = "1.3.1"
+APP_VERSION = "2.0.0b"
 WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION} | AI Archviz Automation"
 
 # Configuration Keys
@@ -18,6 +18,7 @@ RENDERS_DIR_NAME = "_renders"
 OPTIMIZED_DIR_NAME = "optimized"
 ASSETS_DIR_NAME = "assets"
 ICON_FILENAME = "icon.png"
+GENERATED_IMAGES_DIR_NAME = "Generated_Images"
 
 # Default Values
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"

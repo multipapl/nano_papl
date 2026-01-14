@@ -2,6 +2,7 @@ from PySide6.QtCore import QThread, Signal
 from core.llm_client import LLMClient
 from core.utils import config_helper
 from core.utils.path_provider import PathProvider
+from core import constants
 from pathlib import Path
 import os
 import datetime
@@ -66,7 +67,7 @@ class ChatWorker(QThread):
                 # Let's use the PathProvider's app root concept or just use the Documents/NanoPapl root.
                 save_root = Path(config.get("data_root", str(default_root)))
                 
-                out_dir = save_root / "Generated_Images"
+                out_dir = save_root / constants.GENERATED_IMAGES_DIR_NAME
                 out_dir.mkdir(parents=True, exist_ok=True)
                 
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")

@@ -2,12 +2,15 @@ import json
 import os
 import keyring
 from core.logger import logger
-from core.constants import DEFAULT_SYSTEM_INSTRUCTION
+from core.constants import (
+    DEFAULT_SYSTEM_INSTRUCTION, CONFIG_FILE_NAME, PRESETS_FILE_NAME, 
+    KEYRING_SERVICE_NAME, CONFIG_KEY_API_KEY
+)
 
-CONFIG_NAME = "config.json"
-PRESETS_NAME = "presets.json"
-SERVICE_NAME = "NanoPapl"
-KEY_NAME = "api_key"
+CONFIG_NAME = CONFIG_FILE_NAME
+PRESETS_NAME = PRESETS_FILE_NAME
+SERVICE_NAME = KEYRING_SERVICE_NAME
+KEY_NAME = CONFIG_KEY_API_KEY
 
 # AppData Storage
 APP_DATA_DIR = os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "NanoPapl")

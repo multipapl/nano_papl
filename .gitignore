@@ -40,4 +40,7 @@ _renders/
 data/history/
 
 # Documentation
-docs/
+# docs/
+docs/TRUTH_TEST_V1/
+legacy/
+assets/ico.png

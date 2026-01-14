@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from core import constants
 
 class PathProvider:
     """
@@ -21,7 +22,7 @@ class PathProvider:
         self.app_root = Path(os.getcwd())
         
         self.documents_dir = Path(os.path.expanduser("~/Documents"))
-        self.default_project_dir = self.documents_dir / "NanoPapl"
+        self.default_project_dir = self.documents_dir / constants.APP_NAME.replace(" ", "")
         
         # Ensure default directory exists
         self.default_project_dir.mkdir(parents=True, exist_ok=True)
@@ -34,15 +35,15 @@ class PathProvider:
 
     def get_renders_dir(self, project_path: Path) -> Path:
         """Returns the standard _renders directory for a given project path."""
-        return project_path / "_renders"
+        return project_path / constants.RENDERS_DIR_NAME
 
     def get_optimized_dir(self, project_path: Path) -> Path:
         """Returns the standard optimized images directory for a given project path."""
-        return project_path / "optimized"
+        return project_path / constants.OPTIMIZED_DIR_NAME
 
     def get_prompts_file(self, project_path: Path) -> Path:
         """Returns the path to the prompts.md file."""
-        return project_path / "prompts.md"
+        return project_path / constants.DEFAULT_PROMPTS_FILE
 
     def get_temp_dir(self) -> Path:
         temp_path = self.app_root / "temp"
