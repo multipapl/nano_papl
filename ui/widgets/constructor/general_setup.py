@@ -1,8 +1,7 @@
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QScrollArea, QFormLayout
 from PySide6.QtCore import Qt
 from qfluentwidgets import LineEdit, ComboBox, ToolButton, BodyLabel, FluentIcon
-from ui.components import ThemeAwareBackground
-from .common import SectionCard, AdaptiveTextEdit
+from ui.components import ThemeAwareBackground, SectionCard, AdaptiveTextEdit
 
 class GeneralSetupWidget(QWidget):
     """

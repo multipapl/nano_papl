@@ -36,7 +36,7 @@ def verify():
         print("5. Testing Workers Imports...")
         from core.workers.batch_worker import BatchWorker
         from core.workers.chat_worker import ChatWorker
-        from ui.tab_comfy import ComfyWorker
+        from core.workers.comfy_worker import ComfyWorker
         print("   [OK]")
         
         print("\n--- ALL CHECKS PASSED ---")

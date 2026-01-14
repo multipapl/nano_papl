@@ -16,8 +16,7 @@ from core.workers.batch_worker import BatchWorker
 from core.workers.comfy_worker import ComfyWorker
 
 # Modular Widgets
-from ui.widgets.batch.config_panel import ConfigPanel
-from ui.widgets.batch.monitoring_panel import MonitoringPanel
+from ui.widgets.batch import ConfigPanel, MonitoringPanel
 
 class BatchPage(ThemeAwareBackground):
     def __init__(self, parent=None):

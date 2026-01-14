@@ -4,7 +4,7 @@ from qfluentwidgets import (
     CaptionLabel, FluentIcon, TextEdit
 )
 from ui.components import SectionCard
-from ui.widgets.batch.preview import ModernImageCompare
+from .preview import ModernImageCompare
 
 class MonitoringPanel(QWidget):
     def __init__(self, parent=None):
