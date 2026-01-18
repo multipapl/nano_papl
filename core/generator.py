@@ -1,11 +1,11 @@
 import json
 import os
 from pathlib import Path
-from core.utils.resource_helper import get_resource_path
+from core.utils.resource_manager import Resources
 
 class PromptGenerator:
-    def __init__(self, templates_file=os.path.join("data", "templates.json")):
-        self.templates_file = get_resource_path(templates_file)
+    def __init__(self, templates_file="templates.json"):
+        self.templates_file = Resources.get_data_file(templates_file)
         self.data = self._load_templates()
 
     def _load_templates(self):

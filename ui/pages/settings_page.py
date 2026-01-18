@@ -17,27 +17,21 @@ from core import constants
 from core.utils.path_provider import PathProvider
 from ui.components import (
     ModernPathSelector, CustomColorSettingCard, get_scroll_style, 
-    MessageBox, ThemeAwareBackground, UIConfig
+    MessageBox, UIConfig, NPBasePage
 )
 
-class SettingsInterface(ThemeAwareBackground):
+class SettingsInterface(NPBasePage):
     """
     Modular Settings Interface for the application.
+    Refactored to inherit from NPBasePage.
     """
-    def __init__(self, parent=None):
+    def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.setObjectName("SettingsInterface")
+        self.config_manager = config_manager
         self._init_ui()
         
     def _init_ui(self):
-        self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # Use ScrollArea for settings
-        self.scroll = ScrollArea(self)
-        self.scroll.setWidgetResizable(True)
-        self.scroll.viewport().setStyleSheet("background: transparent;")
-        
         self.container = QWidget()
         self.container.setStyleSheet("background: transparent;")
         self.layout = QVBoxLayout(self.container)
@@ -55,19 +49,17 @@ class SettingsInterface(ThemeAwareBackground):
         self._init_maintenance_group()
         
         self.layout.addStretch(1)
-        self.scroll.setWidget(self.container)
-        self.main_layout.addWidget(self.scroll)
+        
+        # Use NPBasePage utility
+        self.scroll = self.addScrollArea(self.container)
         
         # Initial state sync
         qconfig.themeChanged.connect(self._sync_theme_switch)
 
     def _init_title(self):
-        title = QLabel("Settings")
-        font = QFont()
-        font.setPointSize(16)
-        font.setBold(True)
-        title.setFont(font)
-        self.layout.addWidget(title)
+        from qfluentwidgets import TitleLabel
+        self.title_label = TitleLabel("Settings")
+        self.layout.addWidget(self.title_label)
         self.layout.addSpacing(10)
 
     def _init_api_group(self):
@@ -80,7 +72,7 @@ class SettingsInterface(ThemeAwareBackground):
         )
         self.api_key_input = LineEdit()
         self.api_key_input.setPlaceholderText("Enter Key...")
-        self.api_key_input.setText(config_helper.get_value("api_key", ""))
+        self.api_key_input.setText(self.config_manager.config.api_key)
         self.api_key_input.setEchoMode(LineEdit.Password)
         self.api_key_input.setToolTip("Enter your Google Gemini API key for cloud generation.")
         
@@ -106,7 +98,7 @@ class SettingsInterface(ThemeAwareBackground):
         )
         self.comfy_key_input = LineEdit()
         self.comfy_key_input.setPlaceholderText("Enter Key...")
-        self.comfy_key_input.setText(config_helper.get_value("comfy_api_key", ""))
+        self.comfy_key_input.setText(self.config_manager.config.comfy_api_key)
         self.comfy_key_input.setEchoMode(LineEdit.Password)
         self.comfy_key_input.setToolTip("Enter your ComfyUI API key (if required by your custom backend).")
         
@@ -133,9 +125,9 @@ class SettingsInterface(ThemeAwareBackground):
         group.addSettingCard(self.theme_card)
 
         # Color
-        saved_color = config_helper.get_value("theme_color", 
-                                              config_helper.get_value("theme_color_dark" if isDarkTheme() else "theme_color_light", 
-                                                                     UIConfig.ACCENT_DEFAULT_DARK if isDarkTheme() else UIConfig.ACCENT_DEFAULT_LIGHT))
+        saved_color = self.config_manager.config.theme_color or (
+            UIConfig.ACCENT_DEFAULT_DARK if isDarkTheme() else UIConfig.ACCENT_DEFAULT_LIGHT
+        )
         self.color_card = CustomColorSettingCard(
             QColor(saved_color), FluentIcon.PALETTE,
             "Theme Color", "Accent color for the current theme", self
@@ -155,7 +147,7 @@ class SettingsInterface(ThemeAwareBackground):
             "Set the backend URL for local generation", self
         )
         self.comfy_url_input = LineEdit()
-        self.comfy_url_input.setText(config_helper.get_value("comfy_url", constants.DEFAULT_COMFY_URL))
+        self.comfy_url_input.setText(self.config_manager.config.comfy_url or constants.DEFAULT_COMFY_URL)
         self.comfy_url_input.setToolTip("The local or network address of your ComfyUI server (e.g., http://127.0.0.1:8188).")
         
         btn = PrimaryPushButton(FluentIcon.SAVE, "Save URL")
@@ -174,7 +166,7 @@ class SettingsInterface(ThemeAwareBackground):
             "Where history and generated images are stored", self
         )
         def_root = str(PathProvider().get_default_projects_path()) if hasattr(PathProvider, 'get_default_projects_path') else ""
-        current = config_helper.get_value("data_root", def_root)
+        current = self.config_manager.config.data_root or def_root
         
         self.data_root_selector = ModernPathSelector("Path:", current, select_file=False)
         self.data_root_selector.setToolTip("Select a base folder for projects, history, and generated outputs.")
@@ -228,7 +220,8 @@ class SettingsInterface(ThemeAwareBackground):
             InfoBar.warning("Suspicious Key", f"The entered key seems too long ({len(key)} chars). Gemini keys are usually ~39 chars.", 
                            parent=self, duration=5000, position=InfoBarPosition.TOP)
             
-        config_helper.set_value("api_key", key)
+        self.config_manager.config.api_key = key
+        self.config_manager.save()
         self._show_success(f"Gemini API Key saved (Length: {len(key)})")
 
     def refresh_api_key(self):
@@ -247,18 +240,21 @@ class SettingsInterface(ThemeAwareBackground):
             InfoBar.error("Keyring Error", str(e), parent=self, position=InfoBarPosition.TOP)
 
     def save_comfy_api_key(self):
-        config_helper.set_value("comfy_api_key", self.comfy_key_input.text().strip())
+        self.config_manager.config.comfy_api_key = self.comfy_key_input.text().strip()
+        self.config_manager.save()
         self._show_success("ComfyUI API Key saved")
 
     def save_comfy_url(self):
         url = self.comfy_url_input.text().strip() or constants.DEFAULT_COMFY_URL
-        config_helper.set_value("comfy_url", url)
+        self.config_manager.config.comfy_url = url
+        self.config_manager.save()
         self._show_success("ComfyUI URL saved")
 
     def save_data_root(self):
         root = self.data_root_selector.get_path()
         if root:
-            config_helper.set_value("data_root", root)
+            self.config_manager.config.data_root = root
+            self.config_manager.save()
             self._show_success("Data Root updated")
 
     def clear_app_cache(self):
@@ -275,7 +271,7 @@ class SettingsInterface(ThemeAwareBackground):
     def delete_generated_images(self):
         if MessageBox("Delete Images", "Delete ALL generated images permanently?", self).exec():
             try:
-                root = Path(config_helper.get_value("data_root", ""))
+                root = Path(self.config_manager.config.data_root or "")
                 img_dir = root / constants.GENERATED_IMAGES_DIR_NAME
                 if img_dir.exists():
                     shutil.rmtree(img_dir)
@@ -296,7 +292,8 @@ class SettingsInterface(ThemeAwareBackground):
 
     def on_color_changed(self, color):
         setThemeColor(color)
-        config_helper.set_value("theme_color", color.name())
+        self.config_manager.config.theme_color = color.name()
+        self.config_manager.save()
         qconfig.themeChanged.emit(qconfig.theme)
 
     def reset_theme_color(self):
@@ -318,4 +315,4 @@ class SettingsInterface(ThemeAwareBackground):
         self.color_card.colorPicker.setColor(QColor(saved))
 
     def _show_success(self, text):
-        InfoBar.success("Success", text, parent=self, duration=2000, position=InfoBarPosition.TOP)
+        self.showInfoBar("Success", text)

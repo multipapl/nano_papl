@@ -1,11 +1,12 @@
 from typing import Optional
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QScrollArea
-from ui.components import ThemeAwareBackground
+from PySide6.QtWidgets import QWidget, QVBoxLayout
+from ui.components import NPBasePage
 from ui.widgets.tools import ValidatorWidget, ResizerWidget
 
-class ToolsPage(ThemeAwareBackground):
+class ToolsPage(NPBasePage):
     """
     Modern Tools Page.
+    Refactored to inherit from NPBasePage.
     Hosts Image Grid Validator and Batch Image Resizer.
     """
     def __init__(self, parent: Optional[QWidget] = None) -> None:
@@ -14,16 +15,6 @@ class ToolsPage(ThemeAwareBackground):
         self._setup_ui()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        from ui.components import get_scroll_style
-        scroll.setStyleSheet(get_scroll_style())
-        scroll.viewport().setStyleSheet("background: transparent;")
-        
         container = QWidget()
         container.setStyleSheet("background: transparent;")
         scroll_layout = QVBoxLayout(container)
@@ -39,5 +30,6 @@ class ToolsPage(ThemeAwareBackground):
         scroll_layout.addWidget(self.resizer)
 
         scroll_layout.addStretch()
-        scroll.setWidget(container)
-        layout.addWidget(scroll)
+        
+        # Standardized scroll area from NPBasePage
+        self.addScrollArea(container)

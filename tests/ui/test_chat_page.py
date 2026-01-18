@@ -6,9 +6,13 @@ from core.history_manager import HistoryManager
 @pytest.fixture
 def chat_interface(qtbot, tmp_path):
     """Створює ChatInterface для тестів."""
+    from core.utils import config_helper
     hm = HistoryManager(base_dir=tmp_path)
-    config = {"data_root": str(tmp_path)}
-    interface = ChatInterface(hm, config)
+    
+    # Use real config_manager but point data_root to tmp_path
+    config_helper.config_manager.config.data_root = str(tmp_path)
+    
+    interface = ChatInterface(hm, config_helper.config_manager)
     qtbot.addWidget(interface)
     interface.show() # Ensure widget is considered 'visible' for state checks
     return interface
@@ -25,15 +29,17 @@ def test_send_message_updates_ui(qtbot, chat_interface, monkeypatch):
     # Мокаємо ChatWorker, щоб він не запускав реальний потік і не робив запитів
     from PySide6.QtCore import QObject, Signal
     class MockWorker(QObject):
-        response_signal = Signal(str, str)
+        response_signal = Signal(object) # Now object per BaseWorker
         error_signal = Signal(str)
         def __init__(self, *args, **kwargs):
             super().__init__()
             self.user_message = args[3] if len(args) > 3 else ""
+            self.session_id = args[5] if len(args) > 5 else None
         def start(self): pass
         def isRunning(self): return False
         
-    monkeypatch.setattr("ui.pages.chat_page.ChatWorker", MockWorker)
+    # Provide a mock API key to avoid "API Key missing" error message in UI
+    chat_interface.config_manager.config.api_key = "mock-key"
     
     msg_count_before = chat_interface.message_display.message_count()
     test_text = "Test user message"

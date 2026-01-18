@@ -11,15 +11,16 @@ from qfluentwidgets import MessageBox, qconfig
 from ui.widgets.chat import ChatSidebar
 from ui.widgets.chat.message_display import ChatMessageDisplay
 from ui.widgets.chat.control_panel import ChatControlPanel
-from ui.components import InputDialog, UIConfig
+from ui.components import InputDialog, UIConfig, NPBasePage
 
 # Managers & Core
 from core.workers.chat_worker import ChatWorker
 from core.history_manager import HistoryManager
 from core.utils import config_helper
 from core import constants
+from core.models import GenerationConfig
 
-class ChatInterface(QWidget):
+class ChatInterface(NPBasePage):
     """
     Modern Chat Interface - Refactored for Modularity.
     Coordinates between HistoryManager, ChatWorker, and modular UI panels.
@@ -27,14 +28,14 @@ class ChatInterface(QWidget):
     def __init__(
         self,
         history_manager: HistoryManager,
-        config: dict,
+        config_manager,
         parent: Optional[QWidget] = None
     ) -> None:
         super().__init__(parent)
         self.setObjectName("ChatInterface")
         
         self.history_manager = history_manager
-        self.config = config
+        self.config_manager = config_manager
         
         self.current_session = None
         self.current_session_id = None
@@ -47,14 +48,12 @@ class ChatInterface(QWidget):
         # Auto-load latest session
         if self.chat_sidebar.count() > 0:
             self.chat_sidebar.select_first_item()
-        else:
+        
+        # Robustness: ensure we always have a session even if auto-selection failed
+        if self.current_session_id is None:
             self.start_new_chat()
 
     def _setup_ui(self):
-        main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-        
         self.splitter = QSplitter(Qt.Horizontal)
         
         # 1. SIDEBAR (History)
@@ -87,7 +86,7 @@ class ChatInterface(QWidget):
         
         self.splitter.addWidget(self.content_widget)
         self.splitter.setStretchFactor(1, 1)
-        main_layout.addWidget(self.splitter)
+        self.main_layout.addWidget(self.splitter)
         
         self._apply_theme_style()
         qconfig.themeChanged.connect(self._apply_theme_style)
@@ -166,7 +165,7 @@ class ChatInterface(QWidget):
             })
             self.history_manager.save_session(self.current_session_id, self.current_session)
         
-        api_key = config_helper.get_value("api_key", "")
+        api_key = self.config_manager.config.api_key
         if not api_key:
             self.message_display.add_ai_message("❌ Error: API Key missing. Set in Settings.")
             self.control_panel.set_enabled(True)
@@ -174,30 +173,53 @@ class ChatInterface(QWidget):
             return
 
         # Prepare Worker
-        res_val = config["res"] if config["img_mode"] else "1K"
-        ratio_val = config["ratio"] if config["img_mode"] else "1:1"
+        gen_config = GenerationConfig(
+            model_id=config["model"],
+            resolution=config["res"] if config["img_mode"] else "1K",
+            aspect_ratio=config["ratio"] if config["img_mode"] else "1:1",
+            image_format=config.get("format", "PNG"),
+            img_mode=config["img_mode"]
+        )
         
         self.worker = ChatWorker(
-            api_key, config["model"], self.chat_history_api, 
-            text, imgs, res=res_val, ratio=ratio_val,
-            session_id=self.current_session_id,
-            image_format=config.get("format", "PNG")
+            api_key=api_key,
+            config=gen_config,
+            history=self.chat_history_api, 
+            user_message=text,
+            image_paths=imgs,
+            session_id=self.current_session_id
         )
         self.worker.response_signal.connect(self.on_response)
         self.worker.error_signal.connect(self.on_error)
+        
+        self.showStateToolTip("Thinking", "Gemini is analyzing your request...")
         self.worker.start()
 
-    def on_response(self, text: str, image_path: str) -> None:
-        # Identify which session this response belongs to
-        worker = self.sender()
-        sid = getattr(worker, 'session_id', self.current_session_id)
+    def on_response(self, result) -> None:
+        from core.models import GenerationResult
+        
+        # Unpack standardized result
+        if isinstance(result, GenerationResult):
+            text = result.text_response or ""
+            image_path = result.output_path
+            sid = result.session_id or self.current_session_id
+        else:
+            # Legacy fallback (tuple)
+            text, image_path = result
+            worker = self.sender()
+            sid = getattr(worker, 'session_id', self.current_session_id)
         
         is_active = (sid == self.current_session_id)
         imgs = [image_path] if image_path else []
         
         if is_active:
             self.message_display.show_typing_indicator(False)
-            self.chat_history_api.append({"role": "user", "text": worker.user_message})
+            self.finishStateToolTip("Ready", "Response received")
+            
+            # Get original user message from worker
+            worker = self.sender()
+            user_msg = getattr(worker, 'user_message', '')
+            self.chat_history_api.append({"role": "user", "text": user_msg})
             self.chat_history_api.append({"role": "model", "text": text})
             self.message_display.add_ai_message(text, imgs)
             
@@ -226,6 +248,7 @@ class ChatInterface(QWidget):
         if sid == self.current_session_id:
             self.message_display.show_typing_indicator(False)
             self.message_display.add_ai_message(f"❌ Error: {error_msg}")
+            self.finishStateToolTip("Error", "Generation failed")
             self.control_panel.set_enabled(True)
 
     # --- UI Actions ---
@@ -233,7 +256,8 @@ class ChatInterface(QWidget):
     def toggle_sidebar(self):
         visible = not self.chat_sidebar.isVisible()
         self.chat_sidebar.setVisible(visible)
-        config_helper.set_value("chat_sidebar_visible", visible)
+        self.config_manager.config.chat_sidebar_visible = visible
+        self.config_manager.save()
 
     def save_current_settings(self, config: dict):
         if self.current_session:
@@ -250,7 +274,7 @@ class ChatInterface(QWidget):
 
     def open_output_folder(self):
         default_root = Path(os.path.expanduser("~")) / "Documents" / constants.APP_NAME.replace(" ", "")
-        root_path = Path(self.config.get("data_root", str(default_root)))
+        root_path = Path(self.config_manager.config.data_root or str(default_root))
         out_dir = root_path / constants.GENERATED_IMAGES_DIR_NAME
         out_dir.mkdir(parents=True, exist_ok=True)
         os.startfile(out_dir)

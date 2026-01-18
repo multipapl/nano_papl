@@ -17,8 +17,6 @@ logs/
 # Build & Distribution
 build/
 dist/
-*.spec
-scripts/
 temp/
 
 # Environment & IDE

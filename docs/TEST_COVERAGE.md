@@ -1,41 +1,79 @@
 # 🧪 Test Coverage Overview
 
-This document details the current test coverage for Nano Papl v2, providing a map of verified components and their testing methodology.
+**Last Updated**: 2026-01-18  
+**Total Tests**: 83  
+**Status**: ✅ All Passing
 
-## 1. Core Logic & Utilities
+---
 
-| Component | Test File | Coverage Description |
-| :--- | :--- | :--- |
-| **Prompt Generator** | `tests/core/test_generator.py` | Markdown generation, season logic, and Xmas variants. |
-| **History Manager** | `tests/core/test_history_manager.py` | Session creation, folder management, and disk persistence. |
-| **Config Helper** | `tests/core/test_config_helper.py` | JSON configuration loading/saving and Keyring security. |
-| **Constants** | `tests/core/test_constants.py` | Resolution table linearity, aspect ratio accuracy, and AI compatibility. |
-| **LLM Client** | `tests/core/test_llm_client.py` | Provider factory selection and chat generation abstraction. |
+## 1. Coverage Summary
 
-## 2. Business Services
+| Category | Tests | Coverage | Status |
+|----------|-------|----------|--------|
+| **Core Logic** | 35 | ~85% | ✅ Excellent |
+| **Business Services** | 10 | ~75% | ✅ Good |
+| **UI Pages** | 38 | ~65% | ✅ Solid |
 
-| Component | Test File | Coverage Description |
-| :--- | :--- | :--- |
-| **Comfy Orchestrator** | `tests/core/test_comfy_orchestrator.py` | Batch scanning, multi-node workflow updates, and the upload-queue-history-download cycle. |
-| **Generation Service** | `tests/core/test_generation_service.py` | Gemini API communication flow and filename/resolution verification during save. |
-| **Image Resizer** | `tests/core/test_image_resizer_service.py` | Proportional scaling math, Lanczos resampling call, and recursive folder scanning. |
+---
 
-## 3. UI & User Interface
+## 2. Core Logic & Utilities
 
-| Component | Test File | Coverage Description |
-| :--- | :--- | :--- |
-| **Navigation** | `tests/ui/test_navigation.py` | Main window initialization and page switching. |
-| **Theme System** | `tests/ui/test_theme.py` | dynamic theme switching, `ThemeAwareBackground` responsiveness, and bubble color sync. |
-| **Chat Page** | `tests/ui/test_chat_page.py` | Message sending flow, sidebar toggling, and interface initialization. |
-| **Settings Page** | `tests/ui/test_settings_page.py` | API key preservation and general settings interaction. |
-| **Components** | `tests/ui/test_components.py` | `NPButton` behavior, message bubble styling, and auto-expanding text edits. |
-| **Drag & Drop** | `tests/ui/test_drag_drop.py` | Files/folder drop overlay visibility logic. |
+| Component | Test File | Tests | Description |
+| :--- | :--- | :--- | :--- |
+| **Base Worker** | `test_base_worker.py` | 3 | Signal flow, error handling, graceful stop |
+| **Chat Worker** | `test_chat_worker.py` | 2 | GenerationResult emission, timing |
+| **Prompt Generator** | `test_generator.py` | 3 | Markdown generation, season logic, Xmas variants |
+| **History Manager** | `test_history_manager.py` | 4 | Session CRUD, folder management |
+| **Config Helper** | `test_config_helper.py` | 3 | JSON I/O, Keyring security, ConfigManager |
+| **Constants** | `test_constants.py` | 3 | Resolution linearity, aspect ratios |
+| **Error Manager** | `test_error_manager.py` | 6 | Singleton, reporting, history limits |
+| **Resource Manager** | `test_resource_manager.py` | 8 | Singleton, path resolution, properties |
+| **LLM Client** | `test_llm_client.py` | 3 | Provider factory, chat abstraction |
 
-## 4. How to Run
+---
 
-1. **Full Suite**: `python run_tests.py`
-2. **Core Only**: `pytest tests/core`
-3. **UI Only**: `pytest tests/ui`
+## 3. Business Services
+
+| Component | Test File | Tests | Description |
+| :--- | :--- | :--- | :--- |
+| **Comfy Orchestrator** | `test_comfy_orchestrator.py` | 2 | Batch scanning, multi-node workflows |
+| **Generation Service** | `test_generation_service.py` | 3 | Gemini API flow, filename verification |
+| **Image Resizer** | `test_image_resizer_service.py` | 5 | Proportional scaling, Lanczos resampling |
+
+---
+
+## 4. UI Components
+
+| Component | Test File | Tests | Description |
+| :--- | :--- | :--- | :--- |
+| **Constructor Page** | `test_constructor_page.py` | 7 | Init, widgets, state save/load, navigation |
+| **Tools Page** | `test_tools_page.py` | 4 | Init, ValidatorWidget, ResizerWidget |
+| **Batch Page** | `test_batch_page.py` | 7 | Init, ConfigPanel, MonitorPanel, worker |
+| **Chat Page** | `test_chat_page.py` | 4 | Message flow, sidebar, interface init |
+| **Settings Page** | `test_settings_page.py` | 2 | API key preservation |
+| **Navigation** | `test_navigation.py` | 1 | Window init, page switching |
+| **Theme System** | `test_theme.py` | 3 | Theme switching, ThemeAwareBackground |
+| **Components** | `test_components.py` | 2 | NPButton, message bubbles |
+| **Sidebar** | `test_sidebar.py` | 3 | Init, populate, signals |
+| **Other UI** | Various | 5 | Drag-drop, error handling, live config |
+
+---
+
+## 5. How to Run
+
+```powershell
+# Full Suite with Coverage
+python run_tests.py
+
+# Core Only
+pytest tests/core
+
+# UI Only  
+pytest tests/ui
+
+# With Coverage Report
+pytest --cov=core --cov=ui --cov-report=html
+```
 
 > [!TIP]
-> Use `pytest -s` to see log output and print statements during development.
+> Coverage HTML report will be in `htmlcov/index.html`.

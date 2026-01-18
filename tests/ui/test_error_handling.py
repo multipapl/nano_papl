@@ -6,9 +6,10 @@ from qfluentwidgets import InfoBar
 
 @pytest.fixture
 def chat_interface(qtbot, tmp_path):
+    from core.utils import config_helper
     hm = HistoryManager(base_dir=tmp_path)
-    config = {"data_root": str(tmp_path)}
-    interface = ChatInterface(hm, config)
+    config_helper.config_manager.config.data_root = str(tmp_path)
+    interface = ChatInterface(hm, config_helper.config_manager)
     qtbot.addWidget(interface)
     return interface
 
@@ -18,7 +19,7 @@ def test_error_visualization_in_chat(qtbot, chat_interface, monkeypatch):
     # Мокаємо воркер так, щоб він одразу видавав сигнал помилки
     from PySide6.QtCore import QObject, Signal
     class ErrorWorker(QObject):
-        response_signal = Signal(str, str)
+        response_signal = Signal(object)
         error_signal = Signal(str)
         def __init__(self, *args, **kwargs):
             super().__init__()

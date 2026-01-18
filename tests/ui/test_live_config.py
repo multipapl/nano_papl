@@ -10,9 +10,10 @@ def test_settings_save_to_disk(qtbot, tmp_path, monkeypatch):
     # Налаштовуємо тимчасовий конфіг-файл
     config_file = tmp_path / "config.json"
     monkeypatch.setattr(config_helper, "CONFIG_FILE", str(config_file))
+    config_helper.config_manager.reload()
     
     # Створюємо інтерфейс
-    settings = SettingsInterface()
+    settings = SettingsInterface(config_helper.config_manager)
     qtbot.addWidget(settings)
     
     # 1. Тестуємо збереження ComfyUI URL (він точно йде в JSON)

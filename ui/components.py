@@ -56,6 +56,73 @@ class ThemeAwareBackground(QWidget):
         painter.setBrush(color)
         painter.drawRect(self.rect())
 
+class NPBasePage(ThemeAwareBackground):
+    """
+    Standard Base Class for all Application Pages.
+    Standardizes: Background, Layout Margins, Theme Awareness, and Page Lifecycle.
+    """
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.main_layout = QVBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+    def addScrollArea(self, widget: QWidget) -> ScrollArea:
+        """Utility to add a standardized scroll area for the whole page content."""
+        from qfluentwidgets import ScrollArea
+        scroll_area = ScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setWidget(widget)
+        scroll_area.setStyleSheet(get_scroll_style())
+        scroll_area.viewport().setStyleSheet("background: transparent;")
+        self.main_layout.addWidget(scroll_area)
+        return scroll_area
+
+    def showInfoBar(self, title: str, content: str, type: str = "success", duration: int = 2000):
+        """Standardized way to show status messages."""
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        func = {
+            "success": InfoBar.success,
+            "error": InfoBar.error,
+            "warning": InfoBar.warning,
+            "info": InfoBar.info
+        }.get(type, InfoBar.info)
+        
+        func(title, content, parent=self, duration=duration, position=InfoBarPosition.TOP)
+
+    def showStateToolTip(self, title: str, content: str, state: str = "running"):
+        """
+        Shows a non-blocking state tooltip (standard Fluent UX for progress).
+        Returns the tooltip object (must be stored to avoid GC).
+        """
+        from qfluentwidgets import StateToolTip, FluentIcon
+        # Close existing if any (optional, but good for singleton behavior per page)
+        if hasattr(self, '_state_tooltip') and self._state_tooltip:
+            self._state_tooltip.setState(True) # finished
+            self._state_tooltip = None
+
+        self._state_tooltip = StateToolTip(title, content, self.window())
+        self._state_tooltip.move(self._state_tooltip.getSuitablePos())
+        self._state_tooltip.show()
+        return self._state_tooltip
+
+    def finishStateToolTip(self, title: str = "Finished", content: str = ""):
+        """Completes the current state tooltip."""
+        if hasattr(self, '_state_tooltip') and self._state_tooltip:
+            self._state_tooltip.setTitle(title)
+            self._state_tooltip.setContent(content)
+            self._state_tooltip.setState(True) # True = Success/Finished state
+            self._state_tooltip = None
+
+    def showError(self, message: str, context: str = None, details: str = None):
+        """
+        Report an error through the centralized ErrorManager.
+        Automatically logs and displays an InfoBar notification.
+        """
+        from core.utils.error_manager import error_manager, ErrorSeverity
+        ctx = context or self.__class__.__name__
+        error_manager.report(message, severity=ErrorSeverity.ERROR, context=ctx, details=details)
+
 # --- centralized configuration ---
 class UIConfig:
     """Design Tokens"""

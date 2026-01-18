@@ -19,113 +19,113 @@ os.makedirs(APP_DATA_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(APP_DATA_DIR, CONFIG_NAME)
 PRESETS_FILE = os.path.join(APP_DATA_DIR, PRESETS_NAME)
 
-# Memory cache to prevent redundant keyring hits and handle brief unavailabilities
+from core.models import AppConfig
+
+# Memory cache for API key
 _API_KEY_CACHE = None
 
-def save_config(data):
-    """Зберігає словник з налаштуваннями у файл."""
-    # Filter out sensitive keys before saving to JSON
-    safe_data = data.copy()
-    if KEY_NAME in safe_data:
-        del safe_data[KEY_NAME]
-        
-    try:
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(safe_data, f, indent=4, ensure_ascii=False)
-    except Exception as e:
-        logger.error(f"Failed to save config: {e}")
+class ConfigManager:
+    """
+    Singleton manager for application configuration using AppConfig model.
+    Provides object-oriented access to settings.
+    """
+    _instance = None
 
-def load_config():
-    """Завантажує налаштування. Якщо файлу немає — повертає порожній словник."""
-    global _API_KEY_CACHE
-    config = {}
-    if os.path.exists(CONFIG_FILE):
-        try:
-            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                config = json.load(f)
-        except Exception:
-            config = {}
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(ConfigManager, cls).__new__(cls)
+            cls._instance.config = AppConfig()
+            cls._instance.load()
+        return cls._instance
+
+    def load(self):
+        """Loads config from file into AppConfig object."""
+        global _API_KEY_CACHE
+        raw_data = {}
+        if os.path.exists(CONFIG_FILE):
+            try:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                    raw_data = json.load(f)
+            except Exception as e:
+                logger.error(f"Error loading config file: {e}")
+        
+        # Pull API Key from keyring
+        api_key = self._get_api_key_secure()
+        if api_key:
+            raw_data[KEY_NAME] = api_key
+            _API_KEY_CACHE = api_key
+
+        self.config = AppConfig.from_dict(raw_data)
+        return self.config
+
+    def reload(self):
+        """Forces a reload of the configuration from disk."""
+        return self.load()
+
+    def save(self):
+        """Saves current AppConfig object to file."""
+        data = self.config.to_dict()
+        
+        # Securely save API Key and remove from dict
+        if KEY_NAME in data:
+            self._set_api_key_secure(data[KEY_NAME])
+            del data[KEY_NAME]
             
-    # Migration Check: If API key is still in JSON, move to Keyring and cache
-    if KEY_NAME in config and config[KEY_NAME]:
-        key_val = str(config[KEY_NAME]).strip()
-        logger.info(f"Migrating API key from JSON to Keyring (Length: {len(key_val)})")
-        
-        # Update Cache
-        _API_KEY_CACHE = key_val
-        
         try:
-            keyring.set_password(SERVICE_NAME, KEY_NAME, key_val)
-            del config[KEY_NAME]
-            # Save the JSON without the key
             with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
+                json.dump(data, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            logger.error(f"Migration Error: {e}")
-        
-    return config
+            logger.error(f"Failed to save config: {e}")
 
-def get_value(key, default=None):
-    """Повертає конкретне значення за ключем."""
-    global _API_KEY_CACHE
-    
-    # Special handling for API Key
-    if key == KEY_NAME:
-        # 1. Try Cache First (Fastest, Safest)
-        if _API_KEY_CACHE:
-            # logger.debug(f"Retrieved API Key from Cache (Length: {len(_API_KEY_CACHE)})")
-            return _API_KEY_CACHE
-            
-        # 2. Try Keyring
+    def _get_api_key_secure(self):
+        """Retrieves API Key from keyring or cache."""
+        global _API_KEY_CACHE
+        if _API_KEY_CACHE: return _API_KEY_CACHE
         try:
             val = keyring.get_password(SERVICE_NAME, KEY_NAME)
-            if val:
-                val = val.strip()
-                _API_KEY_CACHE = val # Sync Cache
-                logger.info(f"Retrieved API Key from Keyring (Length: {len(val)})")
-                return val
-            else:
-                logger.warning("API Key NOT FOUND in Keyring.")
-        except Exception as e:
-            logger.error(f"Keyring retrieval error: {e}")
-            
-    config = load_config()
-    
-    # 3. Fallback: check config (handling migration edge case where it wasn't stripped yet)
-    if key == KEY_NAME and key in config:
-        fallback_val = str(config[key]).strip()
-        if fallback_val:
-            _API_KEY_CACHE = fallback_val # Sync Cache
-            return fallback_val
-        
-    return config.get(key, default)
+            return val.strip() if val else None
+        except Exception:
+            return None
 
-def set_value(key, value):
-    """Оновлює або додає один параметр у конфіг."""
-    global _API_KEY_CACHE
-    
-    # Special handling for API Key
-    if key == KEY_NAME:
+    def _set_api_key_secure(self, value):
+        """Saves API Key to keyring and updates cache."""
+        global _API_KEY_CACHE
         val_str = str(value).strip()
+        if not val_str and _API_KEY_CACHE: return
         
-        # Validation: Don't overwrite with empty string if we already have a key
-        if not val_str and _API_KEY_CACHE:
-             logger.warning("Attempted to set empty API Key while cache exists. Ignoring.")
-             return
-
-        logger.info(f"Setting API Key: Saving to Keyring and Cache (Input Length: {len(val_str)})")
-        _API_KEY_CACHE = val_str # Sync Cache
-        
+        _API_KEY_CACHE = val_str
         try:
             keyring.set_password(SERVICE_NAME, KEY_NAME, val_str)
-            # Ensure it is removed from JSON if it was ever there
-            config = load_config()
-            if KEY_NAME in config:
-                save_config(config)
-            return
         except Exception as e:
-            logger.error(f"Keyring Error during set_password: {e}")
+            logger.error(f"Keyring Error: {e}")
 
-    config = load_config()
-    config[key] = value
-    save_config(config)
+# Singleton instance
+config_manager = ConfigManager()
+
+# --- Legacy Compatibility Layer (Facilitates gradual migration) ---
+
+def load_config():
+    return config_manager.load().to_dict()
+
+def save_config(data):
+    config_manager.config = AppConfig.from_dict(data)
+    config_manager.save()
+
+def get_value(key, default=None):
+    """
+    Retrieves value from config object. 
+    Favors specific model attributes, fallbacks to _extra dict.
+    """
+    config = config_manager.config
+    if hasattr(config, key):
+        return getattr(config, key)
+    return config._extra.get(key, default)
+
+def set_value(key, value):
+    """Updates value in config object and saves."""
+    config = config_manager.config
+    if hasattr(config, key):
+        setattr(config, key, value)
+    else:
+        config._extra[key] = value
+    config_manager.save()

@@ -12,8 +12,9 @@ from qfluentwidgets import (
     BodyLabel, TextEdit, ComboBox, LineEdit, PrimaryPushButton,
     ToolButton, SegmentedWidget, PopUpAniStackedWidget as StackedWidget
 )
+import logging
 
-from ui.components import ThemeAwareBackground, NPButton
+from ui.components import NPBasePage, NPButton
 from ui.widgets.constructor import (
     ModernPresetToolbar, SeasonMatrixOrchestrator, GeneralSetupWidget,
     SinglePromptWidget
@@ -21,19 +22,19 @@ from ui.widgets.constructor import (
 from core.generator import PromptGenerator
 from core.utils import config_helper
 from core import constants
-import logging
 
-class ConstructorPage(ThemeAwareBackground):
+class ConstructorPage(NPBasePage):
     """
     Modern Constructor Page.
-    Migrated from ui/tab_constructor.py
+    Refactored to inherit from NPBasePage.
     
     Handles UI for prompt assembly, state management, and generation.
     """
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, config_manager, parent: Optional[QWidget] = None) -> None:
         # Initialize inheritance chain
         super().__init__(parent)
         self.setObjectName("ConstructorPage")
+        self.config_manager = config_manager
         
         # State management (Local implementation to avoid touching legacy BaseTab)
         self.field_registry: Dict[str, Any] = {}
@@ -46,7 +47,7 @@ class ConstructorPage(ThemeAwareBackground):
         self.load_state()
 
     def _setup_ui(self):
-        self.main_layout = QVBoxLayout(self)
+        # Override NPBasePage defaults for this specific page
         self.main_layout.setContentsMargins(15, 10, 15, 10)
         self.main_layout.setSpacing(8)
 
@@ -146,8 +147,7 @@ class ConstructorPage(ThemeAwareBackground):
 
     def save_state(self):
         """Saves state from sub-widgets to config."""
-        config = config_helper.load_config()
-        
+        config_obj = self.config_manager.config
         general_state = self.general_widget.get_state()
         
         # Mapping to flat config keys
@@ -165,20 +165,24 @@ class ConstructorPage(ThemeAwareBackground):
         
         for local_key, config_key in mapping.items():
             if local_key in general_state:
-                config[config_key] = general_state[local_key]
+                val = general_state[local_key]
+                if hasattr(config_obj, config_key):
+                    setattr(config_obj, config_key, val)
+                else:
+                    config_obj._extra[config_key] = val
         
         # Seasons
         global_defs = general_state.get("global_lights_defs", {})
-        config["constructor_seasons"] = self.seasons_orchestrator.get_state(global_defs)
+        config_obj._extra["constructor_seasons"] = self.seasons_orchestrator.get_state(global_defs)
         
         # Single Prompt
-        config["constructor_single_prompt"] = self.single_widget.get_state()
+        config_obj._extra["constructor_single_prompt"] = self.single_widget.get_state()
         
-        config_helper.save_config(config)
+        self.config_manager.save()
 
     def load_state(self):
         """Loads state into sub-widgets from config."""
-        config = config_helper.load_config()
+        config_obj = self.config_manager.config
         
         # Mapping from config to flat local dict
         mapping = {
@@ -195,18 +199,19 @@ class ConstructorPage(ThemeAwareBackground):
         
         general_data = {}
         for config_key, local_key in mapping.items():
-            if config_key in config:
-                general_data[local_key] = config[config_key]
+            val = getattr(config_obj, config_key, config_obj._extra.get(config_key))
+            if val is not None:
+                general_data[local_key] = val
         
         self.general_widget.set_state(general_data)
         
         # Seasons
-        saved_seasons = config.get("constructor_seasons", {})
+        saved_seasons = config_obj._extra.get("constructor_seasons", {})
         if saved_seasons:
             self.seasons_orchestrator.set_state(saved_seasons)
 
         # Single Prompt
-        saved_single = config.get("constructor_single_prompt", {})
+        saved_single = config_obj._extra.get("constructor_single_prompt", {})
         if saved_single:
             self.single_widget.set_state(saved_single)
 

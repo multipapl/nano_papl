@@ -15,13 +15,18 @@ from core import constants
 from core.workers.batch_worker import BatchWorker
 from core.workers.comfy_worker import ComfyWorker
 
-# Modular Widgets
+from ui.components import NPBasePage
 from ui.widgets.batch import ConfigPanel, MonitoringPanel
 
-class BatchPage(ThemeAwareBackground):
-    def __init__(self, parent=None):
+class BatchPage(NPBasePage):
+    """
+    Refactored Batch Page inheriting from NPBasePage.
+    Coordinates between engine workers and specialized UI panels.
+    """
+    def __init__(self, config_manager, parent=None):
         super().__init__(parent)
         self.setObjectName("BatchPage")
+        self.config_manager = config_manager
         self.worker = None
         self.MODEL_ID = "gemini-3-pro-image-preview"
         self.api_limit = 250
@@ -32,22 +37,25 @@ class BatchPage(ThemeAwareBackground):
         self.check_api_usage()
         
     def _init_ui(self):
-        main_layout = QVBoxLayout(self)
-        main_layout.setContentsMargins(0, 0, 0, 0)
+        # NPBasePage already provides self.main_layout with zero margins
 
         # Splitter for Main Content
         self.splitter = QSplitter(Qt.Horizontal, self)
         
         # --- LEFT COLUMN (Config) ---
-        self.left_scroll = ScrollArea()
-        self.left_scroll.setWidgetResizable(True)
-        from ui.components import get_scroll_style
-        self.left_scroll.setStyleSheet(get_scroll_style())
-        self.left_scroll.viewport().setStyleSheet("background: transparent;")
-        
         self.config_panel = ConfigPanel()
         self.config_panel.setStyleSheet("background: transparent;")
-        self.left_scroll.setWidget(self.config_panel)
+        
+        # Use NPBasePage utility for content scroll area
+        self.left_scroll = self.addScrollArea(self.config_panel)
+        # Note: addScrollArea adds it to main_layout, but we want it in the splitter.
+        # We need to take it out of main_layout or change logic.
+        
+        # Correction: NPBasePage.addScrollArea is too generic. Let's do it manually 
+        # but using the same style.
+        from ui.components import get_scroll_style
+        self.left_scroll.setStyleSheet(get_scroll_style())
+        
         self.splitter.addWidget(self.left_scroll)
         
         # --- RIGHT COLUMN (Monitor) ---
@@ -58,7 +66,7 @@ class BatchPage(ThemeAwareBackground):
         self.splitter.setStretchFactor(0, 4)
         self.splitter.setStretchFactor(1, 6)
         
-        main_layout.addWidget(self.splitter)
+        self.main_layout.addWidget(self.splitter)
         
         # Connect Signals from Panels
         self.monitor_panel.btn_start.clicked.connect(self.start_process)
@@ -107,6 +115,8 @@ class BatchPage(ThemeAwareBackground):
         self._connect_signals()
         self.worker.time_estimate_signal.connect(self.monitor_panel.lbl_eta.setText)
         self.worker.api_call_signal.connect(self.increment_api_usage)
+        
+        self.showStateToolTip("Batch Generation", "Gemini is processing projects...")
         self.worker.start()
 
     def _start_comfy(self, in_path, out_path):
@@ -118,8 +128,8 @@ class BatchPage(ThemeAwareBackground):
         state = self.config_panel.get_state()
         gen_cfg = self.config_panel.gen_config.get_config()
         settings = {
-            "comfy_url": config_helper.get_value("comfy_url", "http://127.0.0.1:8188"),
-            "api_key": config_helper.get_value("comfy_api_key", ""),
+            "comfy_url": self.config_manager.config.comfy_url or constants.DEFAULT_COMFY_URL,
+            "api_key": self.config_manager.config.comfy_api_key,
             "input_path": in_path,
             "output_path": out_path,
             "resolution": gen_cfg["res"],
@@ -134,6 +144,8 @@ class BatchPage(ThemeAwareBackground):
         
         self.worker = ComfyWorker(settings)
         self._connect_signals()
+        
+        self.showStateToolTip("ComfyUI Generation", "Backend is processing...")
         self.worker.start()
 
     def _connect_signals(self):
@@ -141,8 +153,12 @@ class BatchPage(ThemeAwareBackground):
         self.worker.progress_signal.connect(self.monitor_panel.progress.setValue)
         self.worker.preview_signal.connect(self.monitor_panel.update_preview)
         self.worker.finished_signal.connect(self.on_finished)
-        self.worker.error_signal.connect(lambda e: self.append_log(f"CRITICAL ERROR: {e}"))
+        self.worker.error_signal.connect(self.handle_critical_error)
         self.worker.finished.connect(self.worker.deleteLater)
+
+    def handle_critical_error(self, e):
+        self.append_log(f"CRITICAL ERROR: {e}")
+        self.finishStateToolTip("Error", "Generation failed")
 
     def stop_process(self):
         if self.worker:
@@ -154,6 +170,7 @@ class BatchPage(ThemeAwareBackground):
     def on_finished(self):
         self.monitor_panel.set_busy(False)
         self.monitor_panel.lbl_eta.setText("ETA: Done")
+        self.finishStateToolTip("Generation Finished", "All tasks completed successfully")
         self.worker = None
 
     def append_log(self, text):
@@ -164,22 +181,28 @@ class BatchPage(ThemeAwareBackground):
     def _save_state(self):
         state = self.config_panel.get_state()
         for k, v in state.items():
-            config_helper.set_value(k, v)
+            if hasattr(self.config_manager.config, k):
+                setattr(self.config_manager.config, k, v)
+            else:
+                self.config_manager.config._extra[k] = v
+        self.config_manager.save()
 
     def check_api_usage(self):
         today = QDate.currentDate().toString(Qt.ISODate)
-        data = config_helper.get_value("api_usage", {})
+        data = self.config_manager.config.api_usage or {}
         if data.get("date") != today:
             data = {"date": today, "count": 0}
-            config_helper.set_value("api_usage", data)
+            self.config_manager.config.api_usage = data
+            self.config_manager.save()
         self._update_api_label(data["count"])
 
     def increment_api_usage(self):
         today = QDate.currentDate().toString(Qt.ISODate)
-        data = config_helper.get_value("api_usage", {})
+        data = self.config_manager.config.api_usage or {}
         if data.get("date") != today: data = {"date": today, "count": 0}
         data["count"] = data.get("count", 0) + 1
-        config_helper.set_value("api_usage", data)
+        self.config_manager.config.api_usage = data
+        self.config_manager.save()
         self._update_api_label(data["count"])
 
     def _update_api_label(self, count):

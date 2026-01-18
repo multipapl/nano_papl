@@ -19,9 +19,10 @@ class Logger:
         self._logger = logging.getLogger("NanoPapl")
         self._logger.setLevel(logging.DEBUG)
 
-        # Create logs directory if it doesn't exist
-        log_dir = Path("logs")
-        log_dir.mkdir(exist_ok=True)
+        # Create logs directory in AppData for a cleaner install
+        app_data = os.getenv("APPDATA") or os.path.expanduser("~")
+        log_dir = Path(app_data) / "NanoPapl" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
         
         # File Handler (Rotating)
         log_file = log_dir / f"nanopapl_{datetime.now().strftime('%Y-%m-%d')}.log"
