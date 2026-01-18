@@ -2,6 +2,39 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.0rc] - 2026-01-18
+### Added
+- **Modern UI (Complete Rewrite)**:
+  - Migrated to QFluentWidgets for native Fluent Design experience
+  - Modular chat interface with `ChatSidebar`, `ChatMessageDisplay`, `ChatControlPanel`
+  - Theme-aware components with automatic dark/light mode switching
+  - Drag & drop chat sessions between folders
+  - Modern composite input area (Claude/Cursor-style)
+  - Settings page with live configuration persistence
+
+- **Batch Processing Enhancements**:
+  - "Save individual .txt logs" checkbox option
+  - Default resolution set to 2K
+  - Log saving preference passed to workers
+
+- **Documentation**:
+  - `docs/INDEX.md` — documentation reference index
+  - `docs/ARCHITECTURE.md` — high-level system design
+  - `docs/FUTURE_PLAN.md` — backlog tracking with status system
+
+### Changed
+- **Project Structure**: Reorganized UI into `ui/pages/` and `ui/widgets/` hierarchy
+- **Configuration**: Centralized constants in `core/constants.py`
+- **Theme System**: All colors now use `UIConfig` + `ThemeAwareBackground`
+
+### Fixed
+- **Chat Deletion Bug**: Fixed infinite "New Chat" loop when deleting chats
+- **Settings Import**: Resolved `NameError` with missing `QHBoxLayout` import
+- **Button Focus State**: Fixed visual glitch with dropdown buttons remaining "pressed"
+- **Image Attachment**: Fixed right-click attachment from chat history
+
+---
+
 ## [1.3.0] - 2026-01-10
 ### Added
 - **Batch Generator Improvements**:

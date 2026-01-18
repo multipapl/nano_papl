@@ -2,7 +2,23 @@
 
 This document outlines planned architectural improvements for Nano Papl.
 
----
+> [!IMPORTANT]
+> **Document Rules:**
+> - **Never delete entries** — only update their status when resolved
+> - Move completed items to the `📜 Completed` section at the bottom
+> - Add completion date and version (e.g., `Resolved: v1.3.1, 2026-01-18`)
+> - This file serves as the **single source of truth** for all tasks, bugs, and improvements
+
+**Status Legend:**
+| Status | Meaning |
+|--------|---------|
+| 🔴 To Fix | High priority bug, blocking |
+| 🟡 Planned | Approved for implementation |
+| 🔵 In Progress | Currently being worked on |
+| ⚪ Backlog | Low priority, future consideration |
+| 🟢 Completed | Done, moved to Completed section |
+
+
 
 ## Plugin Architecture for Tools
 
@@ -86,3 +102,23 @@ This leads to:
 
 ### Implementation Trigger
 Perform during next major UI feature addition or refactor.
+
+---
+
+## 📜 Completed
+
+### 🟢 BUG: Chat Deletion Creates Infinite "New Chat" Loop
+
+**Resolved:** 2026-01-18  
+**Original Priority:** High
+
+**Problem:** When deleting a chat, a new "New Chat" was created instead. These chats couldn't be deleted, causing infinite loop.
+
+**Root Cause:** `delete_session()` called `start_new_chat()` which called `_refresh_sidebar()`, then `delete_session()` called `_refresh_sidebar()` again.
+
+**Fix Applied:**
+1. `delete_session()` now clears state first, then refreshes sidebar, then selects existing session or creates new as fallback
+2. Added `refresh_sidebar` flag to `start_new_chat()` to skip refresh when called as fallback
+
+**Files Changed:** `ui/pages/chat_page.py`
+

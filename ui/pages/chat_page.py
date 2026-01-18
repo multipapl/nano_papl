@@ -106,12 +106,19 @@ class ChatInterface(NPBasePage):
         sessions = self.history_manager.list_sessions()
         self.chat_sidebar.set_sessions(sessions)
 
-    def start_new_chat(self):
+    def start_new_chat(self, refresh_sidebar: bool = True):
+        """Create a new chat session.
+        
+        Args:
+            refresh_sidebar: If False, skip sidebar refresh (used when called as fallback after deletion)
+        """
         self.current_session_id, self.current_session = self.history_manager.create_session()
         self.chat_history_api = []
         self.message_display.clear()
         self.message_display.add_ai_message("Hello! I am your AI assistant.")
-        self._refresh_sidebar()
+        
+        if refresh_sidebar:
+            self._refresh_sidebar()
         
         if self.current_session:
             self.current_session["settings"] = self.control_panel.get_chat_config()
@@ -289,10 +296,29 @@ class ChatInterface(NPBasePage):
     # These match the signals from sidebar to keep page logic here
     
     def delete_session(self, sid: str):
+        """Delete a chat session and handle UI state properly."""
+        was_current = (sid == self.current_session_id)
+        
+        # Delete the session file
         self.history_manager.delete_session(sid)
-        if sid == self.current_session_id:
-            self.start_new_chat()
+        
+        # Clear state if we deleted the current session
+        if was_current:
+            self.current_session_id = None
+            self.current_session = None
+            self.chat_history_api = []
+            self.message_display.clear()
+        
+        # Refresh sidebar to reflect deletion
         self._refresh_sidebar()
+        
+        # If we deleted current session, select another or create new
+        if was_current:
+            if self.chat_sidebar.count() > 0:
+                self.chat_sidebar.select_first_item()
+            else:
+                # No sessions left - create new (skip refresh since we just did it)
+                self.start_new_chat(refresh_sidebar=False)
 
     def rename_session(self, sid: str):
         data = self.history_manager.load_session(sid)
