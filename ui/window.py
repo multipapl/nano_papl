@@ -25,7 +25,7 @@ class ModernWindow(FluentWindow):
         super().__init__()
         self.setWindowTitle(constants.WINDOW_TITLE)
         self.setWindowIcon(QIcon("assets/ico.ico"))
-        self.resize(1100, 900)
+        self.resize(1100, 1000)
         
         # Centralized initialization (Dependency Injection pattern)
         self._init_managers()

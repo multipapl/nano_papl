@@ -26,8 +26,10 @@ Nano_Papl/
 ├── ui/
 │   ├── window.py               # Main FluentWindow (Shell)
 │   ├── components.py           # Design Tokens (UIConfig) & Shared primitives
-│   ├── pages/                  # Tab Orchestrators (Chat, Batch, etc.)
-│   └── widgets/                # specialized components (Sidebar, InputArea, etc.)
+│   ├── pages/                  # Tab Orchestrators (Chat, Batch, Constructor, etc.)
+│   └── widgets/                # specialized components
+│       ├── constructor/         # GeneralSetup, SeasonsMatrix, SinglePrompt
+│       └── chat/                # Sidebar, InputArea, MessageBubbles
 └── tests/                      # Unified Test Suite
     ├── core/                   # Logic and service tests
     └── ui/                     # Widget interaction and theme tests
@@ -48,6 +50,9 @@ The `ModernWindow` (in `ui/window.py`) initializes shared managers (`HistoryMana
 All visual properties (colors, borders, dimensions) are centralized in `ui/components.py:UIConfig`. 
 - **Tokens**: Use semantic tokens like `UIConfig.CONTAINER_BG_DARK`.
 - **Theming**: Theme initialization and adaptive logic live purely in the `ui/` layer.
+
+### ⚡ Real-time Feedback Loop
+The **Single Prompt** system implements a reactive pattern where every input field change immediately triggers a re-assembly of the prompt string, providing instant visual feedback to the user without blocking the UI.
 
 ### 🧵 Async Execution (Workers)
 Never run heavy logic (API calls, file I/O) in the main UI thread. 

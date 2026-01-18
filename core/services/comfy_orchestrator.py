@@ -242,11 +242,9 @@ class ComfyOrchestrator:
                 last_saved = save_path
                 
                 # Save Prompt Text
-                if prompt_text:
+                if prompt_text and self.settings.get("save_logs", True):
                     txt_name = Path(target_name).stem + ".txt"
                     txt_path = image_out_dir / txt_name
-                    # Only write if doesn't exist? Or overwrite? 
-                    # GenerationService overwrites. Consistency.
                     try:
                         full_log = f"PROMPT:\n{prompt_text}"
                         txt_path.write_text(full_log, encoding="utf-8")

@@ -10,20 +10,24 @@
     "seasons": {
         "Winter": "Change season to Winter.",
         "Autumn": "Change season to Autumn.",
-        "Summer": "Summer season."
+        "Summer": "Change season to Summer.",
+        "Spring": "Change season to Spring."
     },
     "default_atmospheres": {
         "Winter": "Atmosphere: Cold, snowy. No icicle on the roof.",
         "Autumn": "Atmosphere: Natural mix of the colors on the vegetation, moody, wet asphalt.",
-        "Summer": "Atmosphere: Lush green vegetation, clear air, vibrant colors."
+        "Summer": "Atmosphere: Lush green vegetation, clear air, vibrant colors.",
+        "Spring": "Atmosphere: Fresh crisp air, blossoming vegetation, young light green leaves."
     },
     "christmas_desc": "Elegant minimalistic Christmas decorations in the interiors and street.",
     "lighting": {
         "Daylight": "Lighting: Natural bright daylight, sharp sun shadows.",
         "Overcast": "Lighting: Overcast cold diffused light, no harsh shadows.",
         "Blue Hour": "Lighting: Blue Hour. Deep blue twilight sky, interior lights on.",
-        "Night": "Lighting: Night. Dark sky, emphasis on artificial lighting."
+        "Night": "Lighting: Night. Dark sky, emphasis on artificial lighting.",
+        "Sunrise": "Lighting: Sunrise. Pale cool low angle sunlight, soft long shadows, bright horizon",
+        "Sunset": "Lighting: Golden hour. Strong warm low angle sunlight, clear blue sky, sharp deep cool shadows, architectural contrast."
     },
-    "global_rules": "Adapt vegetation and materials to the new weather conditions. No snow inside the buildings.",
+    "global_rules": "Adapt vegetation and materials to the weather conditions. No snow inside the buildings.",
     "camera": "Shot on 24mm lens. Deep depth of field, sharp focus throughout, f/8. Cinematic lighting, photorealistic."
 }

@@ -53,6 +53,11 @@ class ConfigPanel(QWidget):
         v_ratio.addWidget(self.combo_ratio)
         params_layout.addLayout(v_ratio, 1)
         settings_card.addLayout(params_layout)
+        
+        self.check_save_logs = CheckBox("Save individual .txt logs")
+        self.check_save_logs.setChecked(True)
+        settings_card.addWidget(self.check_save_logs)
+        
         self.layout.addWidget(settings_card)
         
         # 3. Google Parameters
@@ -107,6 +112,7 @@ class ConfigPanel(QWidget):
             "batch_res": self.combo_res.currentIndex(),
             "batch_ratio": self.combo_ratio.currentIndex(),
             "batch_fmt": self.combo_fmt.currentIndex(),
+            "batch_save_logs": self.check_save_logs.isChecked(),
             "batch_seed_val": self.spin_seed.value(),
             "batch_random_seed": self.check_random_seed.isChecked(),
             "batch_input_path": self.path_in.get_path(),
@@ -122,9 +128,11 @@ class ConfigPanel(QWidget):
                 except: pass
 
         set_combo(self.combo_engine, config_helper.get_value("batch_engine", 0))
-        set_combo(self.combo_res, config_helper.get_value("batch_res", 0))
+        set_combo(self.combo_res, config_helper.get_value("batch_res", 1)) # Default to 2K
         set_combo(self.combo_ratio, config_helper.get_value("batch_ratio", 0))
         set_combo(self.combo_fmt, config_helper.get_value("batch_fmt", 0))
+        
+        self.check_save_logs.setChecked(bool(config_helper.get_value("batch_save_logs", True)))
         
         try: self.spin_seed.setValue(int(config_helper.get_value("batch_seed_val", 123456789)))
         except: pass

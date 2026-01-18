@@ -74,7 +74,9 @@ class SeasonGridWidget(ThemeAwareBackground):
             "Daylight": FluentIcon.BRIGHTNESS,
             "Overcast": FluentIcon.SEND, 
             "Blue Hour": FluentIcon.HISTORY,
-            "Night": FluentIcon.ROBOT
+            "Night": FluentIcon.ROBOT,
+            "Sunrise": FluentIcon.BRIGHTNESS,
+            "Sunset": FluentIcon.HISTORY
         }
 
         default_lights = self.data_source.get("lighting", {})
@@ -130,14 +132,15 @@ class SeasonGridWidget(ThemeAwareBackground):
     def get_state(self, global_lights_map: dict) -> dict:
         curr_lights = {}
         for l_name, widgets in self.light_rows.items():
-            # Save only if it's an actual override
-            desc_override = widgets["desc"].text().strip()
+            # If override is empty, use global/template value
+            desc = widgets["desc"].text().strip() or global_lights_map.get(l_name, "")
+            atmos = widgets["atmos"].text().strip()
             
             curr_lights[l_name] = {
                 "is_active": widgets["chk"].isChecked(),
-                "desc_override": desc_override,
+                "desc": desc,
                 "is_xmas": widgets["xmas"].isChecked(),
-                "atmos_override": widgets["atmos"].text().strip()
+                "atmos": atmos
             }
 
         return {
@@ -149,17 +152,35 @@ class SeasonGridWidget(ThemeAwareBackground):
 
     def set_state(self, data: dict):
         self.chk_active.setChecked(data.get("is_active", True))
-        self.entry_desc.setText(data.get("season_text", ""))
-        self.entry_atmos.setText(data.get("atmos", ""))
+        
+        # Support for new seasons in old presets: Fallback to templates if empty
+        template_desc = self.data_source.get("seasons", {}).get(self.season_name, "")
+        template_atmos = self.data_source.get("default_atmospheres", {}).get(self.season_name, "")
+        
+        self.entry_desc.setText(data.get("season_text") or template_desc)
+        self.entry_atmos.setText(data.get("atmos") or template_atmos)
         
         lights_data = data.get("lights", {})
         for l_name, widgets in self.light_rows.items():
             if l_name in lights_data:
                 l_config = lights_data[l_name]
                 widgets["chk"].setChecked(l_config.get("is_active", True))
-                widgets["desc"].setText(l_config.get("desc_override", "")) 
+                # Handle both old and new key names for compatibility
+                widgets["desc"].setText(l_config.get("desc") or l_config.get("desc_override", "")) 
                 widgets["xmas"].setChecked(l_config.get("is_xmas", False))
-                widgets["atmos"].setText(l_config.get("atmos_override", ""))
+                widgets["atmos"].setText(l_config.get("atmos") or l_config.get("atmos_override", ""))
+
+    def reset_defaults(self):
+        """Restores all fields to template-defined defaults."""
+        self.chk_active.setChecked(True)
+        self.entry_desc.setText(self.data_source.get("seasons", {}).get(self.season_name, ""))
+        self.entry_atmos.setText(self.data_source.get("default_atmospheres", {}).get(self.season_name, ""))
+        
+        for widgets in self.light_rows.values():
+            widgets["chk"].setChecked(True)
+            widgets["desc"].clear()
+            widgets["atmos"].clear()
+            widgets["xmas"].setChecked(False)
 
 class SeasonMatrixOrchestrator(QWidget):
     """
@@ -187,7 +208,11 @@ class SeasonMatrixOrchestrator(QWidget):
         self.stacked_widget = StackedWidget(self)
         layout.addWidget(self.stacked_widget)
 
-        seasons_list = ["Winter", "Autumn", "Spring", "Summer"]
+        # Dynamic seasons from templates
+        seasons_list = list(self.data_source.get("seasons", {}).keys())
+        if not seasons_list:
+            seasons_list = ["Winter", "Autumn", "Spring", "Summer"]
+            
         for s_name in seasons_list:
             grid = SeasonGridWidget(s_name, self.data_source, self)
             grid.modified.connect(lambda: self.modified.emit())
@@ -219,4 +244,4 @@ class SeasonMatrixOrchestrator(QWidget):
                 
     def reset_defaults(self):
         for widget in self.season_widgets.values():
-            widget.chk_active.setChecked(True)
+            widget.reset_defaults()

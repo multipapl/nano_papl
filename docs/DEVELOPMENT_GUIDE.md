@@ -30,6 +30,11 @@ def __init__(self, history_manager: HistoryManager, parent=None):
 - **Theme Connection**: Containers should inherit from `ThemeAwareBackground`.
 - **Shared Components**: Use `ui.components` primitives (e.g., `NPButton`, `SectionCard`).
 
+### D. Common UI Patterns
+- **Hybrid Input (ComboBox + LineEdit)**: Used in constructors. The ComboBox provides templates, while the LineEdit allows manual overrides. 
+  - *Best Practice*: Selecting a template should auto-fill the LineEdit to allow immediate further customization.
+- **Visibility Management**: Use `QWidget.show()/hide()` in parent orchestrators to adapt the global toolbar based on the active sub-tab (e.g., hiding bulk generation buttons during single prompt assembly).
+
 ---
 
 ## 2. Adding a New Page

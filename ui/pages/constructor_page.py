@@ -15,7 +15,8 @@ from qfluentwidgets import (
 
 from ui.components import ThemeAwareBackground, NPButton
 from ui.widgets.constructor import (
-    ModernPresetToolbar, SeasonMatrixOrchestrator, GeneralSetupWidget
+    ModernPresetToolbar, SeasonMatrixOrchestrator, GeneralSetupWidget,
+    SinglePromptWidget
 )
 from core.generator import PromptGenerator
 from core.utils import config_helper
@@ -77,6 +78,7 @@ class ConstructorPage(ThemeAwareBackground):
 
         self._setup_general_tab()
         self._setup_matrix_tab()
+        self._setup_single_tab()
 
         # 3. Footer Action (Persistent at bottom)
         self.btn_gen = PrimaryPushButton("GENERATE PROMPTS MATRIX")
@@ -90,7 +92,10 @@ class ConstructorPage(ThemeAwareBackground):
         self.nav.addItem(
             routeKey="General",
             text="General Setup",
-            onClick=lambda *args: self.stacked_widget.setCurrentWidget(self.general_widget),
+            onClick=lambda *args: (
+                self.stacked_widget.setCurrentWidget(self.general_widget),
+                self.btn_gen.show()
+            ),
             icon=FluentIcon.EDIT
         )
         self.stacked_widget.addWidget(self.general_widget)
@@ -106,10 +111,27 @@ class ConstructorPage(ThemeAwareBackground):
         self.nav.addItem(
             routeKey="Matrix",
             text="Seasons Matrix",
-            onClick=lambda *args: self.stacked_widget.setCurrentWidget(self.matrix_widget),
+            onClick=lambda *args: (
+                self.stacked_widget.setCurrentWidget(self.matrix_widget),
+                self.btn_gen.show()
+            ),
             icon=FluentIcon.SYNC
         )
         self.stacked_widget.addWidget(self.matrix_widget)
+
+    def _setup_single_tab(self):
+        self.single_widget = SinglePromptWidget(self.data, self)
+        
+        self.nav.addItem(
+            routeKey="Single",
+            text="Single Prompt",
+            onClick=lambda *args: (
+                self.stacked_widget.setCurrentWidget(self.single_widget),
+                self.btn_gen.hide()
+            ),
+            icon=FluentIcon.DOCUMENT
+        )
+        self.stacked_widget.addWidget(self.single_widget)
 
     def get_current_settings(self):
         general_state = self.general_widget.get_state()
@@ -119,6 +141,7 @@ class ConstructorPage(ThemeAwareBackground):
         return {
             **general_state,
             "active_seasons": curr_seasons, 
+            "single_prompt_state": self.single_widget.get_state()
         }
 
     def save_state(self):
@@ -147,6 +170,9 @@ class ConstructorPage(ThemeAwareBackground):
         # Seasons
         global_defs = general_state.get("global_lights_defs", {})
         config["constructor_seasons"] = self.seasons_orchestrator.get_state(global_defs)
+        
+        # Single Prompt
+        config["constructor_single_prompt"] = self.single_widget.get_state()
         
         config_helper.save_config(config)
 
@@ -179,6 +205,11 @@ class ConstructorPage(ThemeAwareBackground):
         if saved_seasons:
             self.seasons_orchestrator.set_state(saved_seasons)
 
+        # Single Prompt
+        saved_single = config.get("constructor_single_prompt", {})
+        if saved_single:
+            self.single_widget.set_state(saved_single)
+
     def on_save_preset_requested(self, name):
         data = self.get_current_settings()
         self.preset_bar.save_preset_data(name, data)
@@ -187,12 +218,14 @@ class ConstructorPage(ThemeAwareBackground):
     def global_reset(self):
         self.general_widget.reset_defaults()
         self.seasons_orchestrator.reset_defaults()
+        self.single_widget.reset_defaults()
         self.save_state()
         InfoBar.info("Reset", "All fields reset to defaults.", parent=self, position=InfoBarPosition.TOP)
 
     def apply_preset_data(self, data):
         self.general_widget.set_state(data)
         self.seasons_orchestrator.set_state(data.get("active_seasons", {}))
+        self.single_widget.set_state(data.get("single_prompt_state", {}))
         self.save_state()
         InfoBar.success("Preset Loaded", f"Applied settings from preset.", parent=self, position=InfoBarPosition.TOP)
 

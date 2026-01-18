@@ -100,7 +100,7 @@ class BatchPage(ThemeAwareBackground):
             key, in_path, out_path,
             res_text, ratio_text,
             fmt_text,
-            self.MODEL_ID, True,
+            self.MODEL_ID, state.get("batch_save_logs", True),
             parent=self
         )
         self._connect_signals()
@@ -126,7 +126,8 @@ class BatchPage(ThemeAwareBackground):
             "workflow_path": self.default_workflow_path,
             "system_prompt": self.config_panel.text_sys_prompt.toPlainText(),
             "use_random_seed": self.config_panel.check_random_seed.isChecked(),
-            "seed_value": self.config_panel.spin_seed.value()
+            "seed_value": self.config_panel.spin_seed.value(),
+            "save_logs": state.get("batch_save_logs", True)
         }
         
         self.worker = ComfyWorker(settings)
