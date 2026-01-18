@@ -165,35 +165,149 @@ logger.error("Something failed", exc_info=True)
 
 ---
 
-## 8. Git Workflow (Solo Developer)
+## 8. Git Workflow & Versioning
 
-### Daily Development (Branch `dev`)
-Use the `dev` branch for all active work:
+### Branch Strategy
+
+```
+main ────●────────●────────●───── (stable releases only, tagged)
+          \      / \      /
+dev ───●───●────●───●────●──────  (daily work, all commits)
+```
+
+| Branch | Purpose | When to Push |
+|--------|---------|--------------|
+| `dev` | Active development | Every commit |
+| `main` | Stable releases only | Only on release |
+
+### Semantic Versioning (SemVer)
+
+```
+MAJOR.MINOR.PATCH[-prerelease]
+
+Examples:
+  2.0.0rc    → Release Candidate (testing phase)
+  2.0.0      → Stable release
+  2.0.1      → Patch (bug fixes only)
+  2.1.0      → Minor (new features, backward compatible)
+  3.0.0      → Major (breaking changes)
+```
+
+**Version is stored in:** `core/constants.py` → `APP_VERSION`
+
+### Daily Development Flow
+
 ```bash
+# Always work in dev
 git checkout dev
-git add .
-git commit -m "feat: added new message grouping logic"
+
+# Make changes, commit often
+git add -A
+git commit -m "fix: resolved chat deletion loop bug"
+
+# Push to remote
+git push origin dev
 ```
 
 ### Release Procedure
-When a version is ready (e.g., `v2.0.0`):
-1. **Version Bump**: Update `APP_VERSION` in `core/constants.py`.
-2. **Build**: `python scripts/build.py`
-3. **Merge to Main** (Squash):
+
+**1. Prepare Release (in dev):**
+```bash
+# Update version in core/constants.py
+APP_VERSION = "2.0.0"  # Remove -dev or rc suffix
+
+# Update CHANGELOG.md with release notes
+
+# Commit the version bump
+git add -A
+git commit -m "chore: bump version to 2.0.0"
+```
+
+**2. Build & Test:**
+```bash
+python scripts/build.py
+# Test the EXE thoroughly!
+```
+
+**3. Merge to Main:**
 ```bash
 git checkout main
-git merge --squash dev
-git commit -m "Release v2.0.0: Description"
+git merge dev
+git push origin main
+```
+
+**4. Tag the Release:**
+```bash
 git tag v2.0.0
+git push origin --tags
+```
+
+**5. Start New Development Cycle:**
+```bash
+git checkout dev
+# Immediately bump to next dev version
+APP_VERSION = "2.0.1-dev"  # or "2.1.0-dev" for features
+git add -A
+git commit -m "chore: start 2.0.1-dev cycle"
+git push origin dev
+```
+
+### Hotfix Procedure (Critical Bug in Production)
+
+```bash
+# Create hotfix branch from main
+git checkout main
+git checkout -b hotfix/critical-bug
+
+# Fix the bug, bump patch version
+APP_VERSION = "2.0.1"
+
+# Merge back to main
+git checkout main
+git merge hotfix/critical-bug
+git tag v2.0.1
 git push origin main --tags
+
+# Also merge to dev
+git checkout dev
+git merge hotfix/critical-bug
+git push origin dev
+
+# Cleanup
+git branch -d hotfix/critical-bug
 ```
 
 ### Commit Message Standard
-- `feat:`: New feature
-- `fix:`: Bug fix
-- `refactor:`: Code change (no new feature/fix)
-- `docs:`: Documentation
-- `perf:`: Performance
+
+| Prefix | Usage |
+|--------|-------|
+| `feat:` | New feature |
+| `fix:` | Bug fix |
+| `refactor:` | Code restructure (no behavior change) |
+| `docs:` | Documentation only |
+| `chore:` | Build, tooling, version bumps |
+| `perf:` | Performance improvement |
+| `test:` | Adding/fixing tests |
+
+**Examples:**
+```
+feat: add folder drag-and-drop in chat sidebar
+fix: resolve infinite loop in chat deletion
+refactor: extract message display into separate widget
+docs: update Git workflow section
+chore: bump version to 2.0.0
+```
+
+### Version Lifecycle Example
+
+```
+v2.0.0rc   → Testing with users
+v2.0.0     → Stable release (tag, merge to main)
+v2.0.1-dev → Start new cycle immediately
+v2.0.1     → Patch with bug fixes
+v2.1.0-dev → Start feature cycle
+v2.1.0     → Minor release with new features
+```
 
 ---
 
