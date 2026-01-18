@@ -60,7 +60,33 @@ The UI thread must **never block**. All API calls or heavy processing must use `
 
 ---
 
-## 5. Testing Standards
+## 4. Security Best Practices
+
+Nano Papl enforces a strict **separation between sensitive data and configuration logic**.
+
+### Managing API Keys
+1. **Never Save to Files**: Do NOT hardcode or write API keys into `config.json` or any local file.
+2. **Use Keyring**: Always use `keyring.set_password` and `keyring.get_password`.
+3. **Use the Helper**: Prefer `config_helper.get_value("api_key")` which handles the memory cache automatically.
+4. **Validation**: Validate key format/length in the UI before passing it to the core layer.
+
+---
+
+## 5. Image & Hardware Protocols
+
+Consistency in image IO is critical for application stability on different hardware.
+
+### A. Image Storage
+Always use `core.utils.image_utils` for saving or modifying images:
+- **`save_image_with_format`**: Automatically handles format conversion (e.g., stripping Alpha channel for JPG) and creates directories as needed.
+- **`get_or_create_thumbnail`**: Use this for UI previews to minimize RAM usage.
+
+### B. Shared Logic
+When adding a new generation feature, reuse `ui.components:GenerationConfigWidget`. This ensures that user selections for resolution and aspect ratios are handled identically across the whole app.
+
+---
+
+## 6. Testing Standards
 
 We maintain two test suites in the `tests/` directory.
 
@@ -77,7 +103,7 @@ python run_tests.py
 
 ---
 
-## 6. Best Practices Summary (The "LEGO" Rule)
+## 7. Best Practices Summary (The "LEGO" Rule)
 
 - widgets are **bricks** (UI + Small State).
 - pages are **instructions** (Orchestrating bricks).

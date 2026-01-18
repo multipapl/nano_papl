@@ -66,14 +66,29 @@ The project maintains a high coverage of both logic and interface.
 
 | Data Type | Storage | Manager |
 | :--- | :--- | :--- |
+| **API Keys** | System Keyring + RAM Cache | `config_helper.py` |
 | **User Settings** | `config.json` (AppData) | `config_helper.py` |
 | **User Presets** | `presets.json` (AppData) | `config_helper.py` |
 | **Chat History** | `.json` files (Documents) | `history_manager.py` |
 | **Temp Files** | `temp/` folder (Root) | `PathProvider` |
 
-## 4. Key Dependencies
+## 4. Security & Persistence
+
+Nano Papl uses a **Zero-Plaintext** policy for sensitive keys:
+- **Keyring Backend**: API keys are stored in the OS-level secure vault (Windows Credential Manager / macOS Keychain).
+- **RAM Caching**: To prevent UI stutters or lookup failures, keys are cached in a private memory variable after the first successful retrieval.
+
+## 5. Image & Generation Pipeline
+
+All image-related operations are centralized for consistency:
+- **`image_utils.py`**: A low-level utility for saving, resizing, and generating thumbnails. It abstracts platform-specific optimizations (RGBA to RGB conversion, file locking).
+- **`GenerationConfigWidget`**: A shared UI component used in both Chat and Batch tabs to ensure uniform selection of resolution, aspect ratio, and format.
+- **Async Loading**: UI components like `ClickableImageLabel` use `QThreadPool` to load and scale images in the background, keeping the main thread responsive.
+
+## 6. Key Dependencies
 
 - **PySide6**: Core framework.
 - **QFluentWidgets**: Modern UI design system (Fluent Design).
 - **Google GenAI**: Gemini API integration.
 - **Pillow**: Image optimization and previews.
+- **Keyring**: Cross-platform secure storage.
