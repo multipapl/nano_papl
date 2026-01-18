@@ -35,14 +35,17 @@ class ModernPresetToolbar(QWidget):
 
         self.btn_load = PushButton("Load")
         self.btn_load.clicked.connect(self._on_load)
+        self.btn_load.setToolTip("Load settings from the selected preset.")
         layout.addWidget(self.btn_load)
 
         self.btn_save = PushButton("Save As...")
         self.btn_save.clicked.connect(self._on_save_request)
+        self.btn_save.setToolTip("Save current settings as a new or existing preset.")
         layout.addWidget(self.btn_save)
 
         self.btn_del = TransparentPushButton(FluentIcon.DELETE, "Delete")
         self.btn_del.clicked.connect(self._on_delete)
+        self.btn_del.setToolTip("Permanently delete the selected preset.")
         layout.addWidget(self.btn_del)
 
         layout.addStretch()
@@ -50,6 +53,7 @@ class ModernPresetToolbar(QWidget):
         if self.show_reset:
             self.btn_reset = PushButton(self.reset_label)
             self.btn_reset.clicked.connect(self.reset_requested.emit)
+            self.btn_reset.setToolTip("Reset all fields on this tab to their default template values.")
             layout.addWidget(self.btn_reset)
 
     def refresh_presets(self):
@@ -65,7 +69,9 @@ class ModernPresetToolbar(QWidget):
             self.preset_loaded.emit(presets[name])
 
     def _on_save_request(self):
-        dialog = InputDialog("Save Preset", "Enter preset name:", self)
+        # Parent to self.window() to prevent clipping in small toolbar widget
+        parent = self.window() if self.window() else self
+        dialog = InputDialog("Save Preset", "Enter preset name:", parent)
         if dialog.exec():
             name = dialog.text()
             if name:
@@ -75,7 +81,9 @@ class ModernPresetToolbar(QWidget):
         name = self.combo.currentText()
         if not name: return
         
-        dialog = MessageBox("Delete Preset", f"Are you sure you want to delete '{name}'?", self)
+        # Parent to self.window() to prevent clipping in small toolbar widget
+        parent = self.window() if self.window() else self
+        dialog = MessageBox("Delete Preset", f"Are you sure you want to delete '{name}'?", parent)
         if dialog.exec():
             presets = self._load_from_file()
             if name in presets:

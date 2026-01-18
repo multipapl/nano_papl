@@ -37,53 +37,70 @@ class SinglePromptWidget(QWidget):
 
         # 1. Compact Rows Card
         card_rows = SectionCard("Prompt Parameters")
-        form = QFormLayout()
+        
+        # We'll use a main container for rows to keep it organized
+        rows_container = QWidget()
+        form = QFormLayout(rows_container)
         form.setLabelAlignment(Qt.AlignRight)
         form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        form.setContentsMargins(5, 5, 5, 5)
+        form.setContentsMargins(0, 0, 0, 0)
         form.setSpacing(8)
 
         # Helper to create Row: ComboBox + LineEdit
-        def create_combo_row(label_text, template_key):
+        def create_combo_row(label_text, template_key, combo_tip=None, entry_tip=None):
             h = QHBoxLayout()
             combo = ComboBox()
-            items = list(self.data.get(template_key, {}).keys())
-            combo.addItems(items)
+            combo.addItems(list(self.data.get(template_key, {}).keys()))
+            if combo_tip: combo.setToolTip(combo_tip)
             
             entry = LineEdit()
             entry.setPlaceholderText("Edit template text...")
             entry.setClearButtonEnabled(True)
+            if entry_tip: entry.setToolTip(entry_tip)
             
             h.addWidget(combo, 1)
             h.addWidget(entry, 2)
             
             lbl = BodyLabel(label_text)
             lbl.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
-            form.addRow(lbl, h)
-            return combo, entry
+            return lbl, h, combo, entry
 
         # 1. Location
         self.entry_loc = LineEdit()
-        self.entry_loc.setPlaceholderText("Location/Context...")
-        self.entry_loc.setText("Default Location")
-        lbl_loc = BodyLabel("Location:")
-        lbl_loc.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
-        form.addRow(lbl_loc, self.entry_loc)
+        self.entry_loc.setPlaceholderText("Modern Cabin, forest...")
+        self.entry_loc.setClearButtonEnabled(True)
+        self.entry_loc.setToolTip("Specific location or subject for this single prompt.")
+        form.addRow(BodyLabel("Location:"), self.entry_loc)
 
         # 2. Input Type
-        self.combo_input, self.entry_input = create_combo_row("Input:", "input_types")
+        lbl_in, h_in, self.combo_input, self.entry_input = create_combo_row(
+            "Input:", "input_types", 
+            "Select source input type.", "Manual override for the input type description."
+        )
+        form.addRow(lbl_in, h_in)
         
         # 3. Scene Type
-        self.combo_scene, self.entry_scene = create_combo_row("Type:", "scene_types")
+        lbl_sc, h_sc, self.combo_scene, self.entry_scene = create_combo_row(
+            "Type:", "scene_types",
+            "Select scene category (Interior/Exterior).", "Manual override for the scene type description."
+        )
+        form.addRow(lbl_sc, h_sc)
 
         # 4. Season + Atmosphere
         h_season = QHBoxLayout()
         self.combo_season = ComboBox()
         self.combo_season.addItems(list(self.data.get("seasons", {}).keys()))
+        self.combo_season.setToolTip("Select the season.")
+        
         self.entry_season = LineEdit()
         self.entry_season.setPlaceholderText("Season text...")
+        self.entry_season.setClearButtonEnabled(True)
+        self.entry_season.setToolTip("Manual override for the season description.")
+        
         self.entry_atmos = LineEdit()
         self.entry_atmos.setPlaceholderText("Atmosphere...")
+        self.entry_atmos.setClearButtonEnabled(True)
+        self.entry_atmos.setToolTip("Atmosphere description (e.g., foggy, sunny, gloomy).")
         
         h_season.addWidget(self.combo_season, 1)
         h_season.addWidget(self.entry_season, 2)
@@ -94,39 +111,46 @@ class SinglePromptWidget(QWidget):
         form.addRow(lbl_season, h_season)
 
         # 5. Lighting
-        self.combo_light, self.entry_light = create_combo_row("Lighting:", "lighting")
+        lbl_lt, h_lt, self.combo_light, self.entry_light = create_combo_row(
+            "Lighting:", "lighting",
+            "Select lighting conditions.", "Manual override for the lighting description."
+        )
+        form.addRow(lbl_lt, h_lt)
 
         # 6. Christmas
-        h_xmas = QHBoxLayout()
         self.chk_xmas = CheckBox("Christmas Mode")
+        self.chk_xmas.setToolTip("Toggle Christmas atmosphere for this prompt.")
         self.entry_xmas = LineEdit()
-        self.entry_xmas.setPlaceholderText("Christmas atmosphere description...")
-        self.entry_xmas.setText(self.data.get("christmas_desc", ""))
+        self.entry_xmas.setPlaceholderText("Xmas description...")
+        self.entry_xmas.setClearButtonEnabled(True)
+        self.entry_xmas.setToolTip("Override for Christmas description.")
+        
+        h_xmas = QHBoxLayout()
         h_xmas.addWidget(self.chk_xmas)
         h_xmas.addWidget(self.entry_xmas, 1)
-        
         form.addRow(BodyLabel("Xmas:"), h_xmas)
 
-        # 7. Global Rules
+        # 7. Global Modifiers
         self.entry_rules = LineEdit()
         self.entry_rules.setPlaceholderText("Global rules...")
-        self.entry_rules.setText(self.data.get("global_rules", ""))
-        form.addRow(BodyLabel("Global:"), self.entry_rules)
-
-        # 8. Camera
+        self.entry_rules.setClearButtonEnabled(True)
+        self.entry_rules.setToolTip("Negative and positive global rules.")
+        form.addRow(BodyLabel("Rules:"), self.entry_rules)
+        
         self.entry_cam = LineEdit()
         self.entry_cam.setPlaceholderText("Camera settings...")
-        self.entry_cam.setText(self.data.get("camera", ""))
+        self.entry_cam.setClearButtonEnabled(True)
+        self.entry_cam.setToolTip("Camera and lens parameters (focal length, aperture).")
         form.addRow(BodyLabel("Camera:"), self.entry_cam)
 
-        card_rows.addLayout(form)
+        card_rows.addWidget(rows_container)
         self.scroll_layout.addWidget(card_rows)
 
         # --- Real-time Output ---
         self.text_out = AdaptiveTextEdit()
-        self.text_out.setPlaceholderText("Generated prompt will appear here...")
         self.text_out.setReadOnly(True)
-        # Make it look distinct
+        self.text_out.setPlaceholderText("The generated prompt will appear here...")
+        self.text_out.setToolTip("Live preview of the final prompt. Copy this for use in your generator.")
         self.text_out.setStyleSheet("QTextEdit { font-weight: bold; background: rgba(0,0,0,0.05); }")
         
         card_out = SectionCard("Live Preview")

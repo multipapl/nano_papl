@@ -39,6 +39,7 @@ class GeneralSetupWidget(QWidget):
         self.entry_name = LineEdit()
         self.entry_name.setPlaceholderText("New_Project")
         self.entry_name.setClearButtonEnabled(True)
+        self.entry_name.setToolTip("Enter the project name for folder organization and file naming.")
         lbl_name = BodyLabel("Name:")
         lbl_name.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_p1.addRow(lbl_name, self.entry_name)
@@ -49,6 +50,7 @@ class GeneralSetupWidget(QWidget):
         self.entry_ctx = LineEdit()
         self.entry_ctx.setPlaceholderText("Context/Location...")
         self.entry_ctx.setClearButtonEnabled(True)
+        self.entry_ctx.setToolTip("Describe the general location or context (e.g., 'Modern Living Room', 'Scandinavian Cabin').")
         lbl_loc = BodyLabel("Loc:")
         lbl_loc.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_p2.addRow(lbl_loc, self.entry_ctx)
@@ -67,6 +69,7 @@ class GeneralSetupWidget(QWidget):
         self.combo_type = ComboBox()
         self.combo_type.addItems(list(self.data.get("input_types", {}).keys()))
         self.combo_type.currentTextChanged.connect(self.update_base_text)
+        self.combo_type.setToolTip("Select the type of source input (e.g., Viewport screenshot or Clean Render).")
         lbl_input = BodyLabel("Input:")
         lbl_input.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_s1.addRow(lbl_input, self.combo_type)
@@ -77,6 +80,7 @@ class GeneralSetupWidget(QWidget):
         self.combo_cat = ComboBox()
         self.combo_cat.addItems(list(self.data.get("scene_types", {}).keys()))
         self.combo_cat.currentTextChanged.connect(self.update_base_text)
+        self.combo_cat.setToolTip("Select the scene category (Interior vs Exterior).")
         lbl_type = BodyLabel("Type:")
         lbl_type.setFixedWidth(UIConfig.LABEL_MIN_WIDTH)
         form_s2.addRow(lbl_type, self.combo_cat)
@@ -86,6 +90,7 @@ class GeneralSetupWidget(QWidget):
 
         self.text_base = AdaptiveTextEdit()
         self.text_base.setPlaceholderText("Adjust base prompt here...")
+        self.text_base.setToolTip("Manually edit the base prompt structure here. This persists across matrix generation.")
         card_scene.addWidget(self.text_base)
         scroll_layout.addWidget(card_scene)
 
@@ -101,6 +106,7 @@ class GeneralSetupWidget(QWidget):
             entry = LineEdit()
             entry.setText(l_desc)
             entry.setClearButtonEnabled(True)
+            entry.setToolTip(f"Global definition for '{l_name}' lighting variant.")
             h_row.addWidget(entry)
             
             btn_reset = ToolButton(FluentIcon.SYNC)
@@ -122,16 +128,19 @@ class GeneralSetupWidget(QWidget):
         self.entry_xmas = LineEdit()
         self.entry_xmas.setPlaceholderText("Christmas variants suffix...")
         self.entry_xmas.setClearButtonEnabled(True)
+        self.entry_xmas.setToolTip("Suffix added to prompts when Christmas mode is active in the matrix.")
         form_global.addRow(BodyLabel("Xmas Suffix:"), self.entry_xmas)
         
         self.entry_rules = LineEdit()
         self.entry_rules.setPlaceholderText("Global negative/positive rules...")
         self.entry_rules.setClearButtonEnabled(True)
+        self.entry_rules.setToolTip("Global rules applied to every prompt (e.g., quality boosters, avoid list).")
         form_global.addRow(BodyLabel("Global Rules:"), self.entry_rules)
         
         self.entry_cam = LineEdit()
         self.entry_cam.setPlaceholderText("Camera, focal length, etc.")
         self.entry_cam.setClearButtonEnabled(True)
+        self.entry_cam.setToolTip("Global camera settings (e.g., '35mm lens, f/1.8, depth of field').")
         form_global.addRow(BodyLabel("Camera:"), self.entry_cam)
         
         card_global.addLayout(form_global)

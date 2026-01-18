@@ -27,9 +27,11 @@ class ResizerWidget(QWidget):
         
         # Paths
         self.input_path = ModernPathSelector("Input Folder:", select_file=False)
+        self.input_path.setToolTip("Folder containing images to resize.")
         self.card.addWidget(self.input_path)
         
         self.output_path = ModernPathSelector("Output Folder:", select_file=False)
+        self.output_path.setToolTip("Destination folder for resized images.")
         self.card.addWidget(self.output_path)
         
         # Resolution
@@ -41,6 +43,7 @@ class ResizerWidget(QWidget):
         self.res_width.setPlaceholderText("Width (px)")
         self.res_width.setText("1920")
         self.res_width.setClearButtonEnabled(True)
+        self.res_width.setToolTip("Target width in pixels.")
         h_res.addWidget(BodyLabel("Width:"))
         h_res.addWidget(self.res_width)
         
@@ -48,6 +51,7 @@ class ResizerWidget(QWidget):
         self.res_height.setPlaceholderText("Height (px)")
         self.res_height.setText("1080")
         self.res_height.setClearButtonEnabled(True)
+        self.res_height.setToolTip("Target height in pixels.")
         h_res.addWidget(BodyLabel("Height:"))
         h_res.addWidget(self.res_height)
         
@@ -62,6 +66,7 @@ class ResizerWidget(QWidget):
         # Start Button
         self.btn_start = NPButton("START RESIZING", FluentIcon.PLAY)
         self.btn_start.clicked.connect(self.start_resizing)
+        self.btn_start.setToolTip("Begin the batch resizing process.")
         self.card.addWidget(self.btn_start)
         
         # Log Area
@@ -69,6 +74,7 @@ class ResizerWidget(QWidget):
         self.resizer_log.setReadOnly(True)
         self.resizer_log.setFixedHeight(100)
         self.resizer_log.setPlaceholderText("Select folders and resolution, then click Start Resizing...")
+        self.resizer_log.setToolTip("Status of the resizing task and any errors encountered.")
         self.card.addWidget(self.resizer_log)
         
         layout.addWidget(self.card)

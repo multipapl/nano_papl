@@ -18,6 +18,7 @@ class ResizingLabel(QLabel):
         self.setCursor(Qt.PointingHandCursor)
         dark = isDarkTheme()
         secondary = UIConfig.TEXT_SECONDARY_DARK if dark else UIConfig.TEXT_SECONDARY_LIGHT
+        self.setToolTip("Click to open image in system viewer")
         self.setStyleSheet(f"color: {secondary}; font-style: italic;")
 
     def setPixmap(self, pixmap):

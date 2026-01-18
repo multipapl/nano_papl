@@ -26,6 +26,7 @@ class ValidatorWidget(QWidget):
         
         # Path Selector
         self.path_input = ModernPathSelector("Input Directory:", select_file=False)
+        self.path_input.setToolTip("Select the directory containing project folders or raw images to validate.")
         self.card.addWidget(self.path_input)
 
         # Actions
@@ -34,11 +35,13 @@ class ValidatorWidget(QWidget):
         
         self.btn_scan = NPButton("ANALYZE", FluentIcon.SEARCH)
         self.btn_scan.clicked.connect(self.scan_images)
+        self.btn_scan.setToolTip("Analyze selected directory for image alignment and resolution issues.")
         h_val.addWidget(self.btn_scan)
         
         self.btn_crop = NPButton("OPTIMIZE", FluentIcon.PHOTO, is_primary=False)
         self.btn_crop.clicked.connect(self.auto_crop_images)
         self.btn_crop.setEnabled(False)
+        self.btn_crop.setToolTip("Automatically fit and crop images to the nearest standard resolution and aspect ratio.")
         h_val.addWidget(self.btn_crop)
         
         h_val.addStretch()
@@ -49,6 +52,7 @@ class ValidatorWidget(QWidget):
         self.validator_report.setReadOnly(True)
         self.validator_report.setFixedHeight(100)
         self.validator_report.setPlaceholderText("Select a folder and click Analyze to check alignment...")
+        self.validator_report.setToolTip("Detailed report of the analysis and optimization results.")
         self.card.addWidget(self.validator_report)
         
         layout.addWidget(self.card)

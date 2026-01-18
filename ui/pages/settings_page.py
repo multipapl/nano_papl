@@ -82,9 +82,11 @@ class SettingsInterface(ThemeAwareBackground):
         self.api_key_input.setPlaceholderText("Enter Key...")
         self.api_key_input.setText(config_helper.get_value("api_key", ""))
         self.api_key_input.setEchoMode(LineEdit.Password)
+        self.api_key_input.setToolTip("Enter your Google Gemini API key for cloud generation.")
         
         btn = PrimaryPushButton(FluentIcon.SAVE, "Save Key")
         btn.clicked.connect(self.save_api_key)
+        btn.setToolTip("Permanently save the Gemini API key to your local configuration.")
         self.api_key_card.viewLayout.addWidget(self.api_key_input)
         self.api_key_card.viewLayout.addWidget(btn)
         
@@ -97,9 +99,11 @@ class SettingsInterface(ThemeAwareBackground):
         self.comfy_key_input.setPlaceholderText("Enter Key...")
         self.comfy_key_input.setText(config_helper.get_value("comfy_api_key", ""))
         self.comfy_key_input.setEchoMode(LineEdit.Password)
+        self.comfy_key_input.setToolTip("Enter your ComfyUI API key (if required by your custom backend).")
         
         btn_c = PrimaryPushButton(FluentIcon.SAVE, "Save Key")
         btn_c.clicked.connect(self.save_comfy_api_key)
+        btn_c.setToolTip("Save the ComfyUI API key.")
         self.comfy_key_card.viewLayout.addWidget(self.comfy_key_input)
         self.comfy_key_card.viewLayout.addWidget(btn_c)
 
@@ -116,6 +120,7 @@ class SettingsInterface(ThemeAwareBackground):
         )
         self.theme_card.switchButton.setChecked(isDarkTheme())
         self.theme_card.switchButton.checkedChanged.connect(self.toggle_theme)
+        self.theme_card.switchButton.setToolTip("Toggle between system-wide Light and Dark interface themes.")
         group.addSettingCard(self.theme_card)
 
         # Color
@@ -126,6 +131,8 @@ class SettingsInterface(ThemeAwareBackground):
             QColor(saved_color), FluentIcon.PALETTE,
             "Theme Color", "Accent color for the current theme", self
         )
+        self.color_card.colorPicker.setToolTip("Select a custom accent color for the interface.")
+        self.color_card.btnReset.setToolTip("Restore the default accent color for the active theme.")
         self.color_card.colorChanged.connect(self.on_color_changed)
         self.color_card.btnReset.clicked.connect(self.reset_theme_color)
         group.addSettingCard(self.color_card)
@@ -140,9 +147,11 @@ class SettingsInterface(ThemeAwareBackground):
         )
         self.comfy_url_input = LineEdit()
         self.comfy_url_input.setText(config_helper.get_value("comfy_url", constants.DEFAULT_COMFY_URL))
+        self.comfy_url_input.setToolTip("The local or network address of your ComfyUI server (e.g., http://127.0.0.1:8188).")
         
         btn = PrimaryPushButton(FluentIcon.SAVE, "Save URL")
         btn.clicked.connect(self.save_comfy_url)
+        btn.setToolTip("Update the ComfyUI backend connection address.")
         self.comfy_url_card.viewLayout.addWidget(self.comfy_url_input)
         self.comfy_url_card.viewLayout.addWidget(btn)
         
@@ -159,8 +168,10 @@ class SettingsInterface(ThemeAwareBackground):
         current = config_helper.get_value("data_root", def_root)
         
         self.data_root_selector = ModernPathSelector("Path:", current, select_file=False)
+        self.data_root_selector.setToolTip("Select a base folder for projects, history, and generated outputs.")
         btn = PrimaryPushButton(FluentIcon.SAVE, "Save Path")
         btn.clicked.connect(self.save_data_root)
+        btn.setToolTip("Apply and save the new data root path.")
         
         self.data_root_card.viewLayout.addWidget(self.data_root_selector)
         self.data_root_card.viewLayout.addWidget(btn)
@@ -175,6 +186,7 @@ class SettingsInterface(ThemeAwareBackground):
         btn_cache = PrimaryPushButton("Clear Cache")
         btn_cache.setFixedWidth(120)
         btn_cache.clicked.connect(self.clear_app_cache)
+        btn_cache.setToolTip("Delete all temporary generation files and application logs to free up space.")
         self.cache_card.hBoxLayout.addWidget(btn_cache, 0, Qt.AlignRight)
         self.cache_card.hBoxLayout.addSpacing(16)
         
@@ -183,6 +195,7 @@ class SettingsInterface(ThemeAwareBackground):
         btn_imgs = PrimaryPushButton("Delete Images")
         btn_imgs.setFixedWidth(120)
         btn_imgs.clicked.connect(self.delete_generated_images)
+        btn_imgs.setToolTip("Permanently delete all images in the generated outputs folder.")
         self.images_card.hBoxLayout.addWidget(btn_imgs, 0, Qt.AlignRight)
         self.images_card.hBoxLayout.addSpacing(16)
         

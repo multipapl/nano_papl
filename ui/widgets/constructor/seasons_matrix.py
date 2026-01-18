@@ -36,12 +36,14 @@ class SeasonGridWidget(ThemeAwareBackground):
         self.chk_active = CheckBox("Enable Season")
         self.chk_active.setChecked(True)
         self.chk_active.stateChanged.connect(lambda: self.modified.emit())
+        self.chk_active.setToolTip("Enable or disable this season for matrix generation.")
         header_layout.addWidget(self.chk_active)
         
         self.entry_desc = LineEdit()
         self.entry_desc.setPlaceholderText("Season general prompt suffix...")
         self.entry_desc.setText(self.data_source.get("seasons", {}).get(self.season_name, ""))
         self.entry_desc.setClearButtonEnabled(True)
+        self.entry_desc.setToolTip("Base description for this season. This is appended to the base prompt.")
         self.entry_desc.textChanged.connect(lambda: self.modified.emit())
         header_layout.addWidget(self.entry_desc, 2) # More weight
         
@@ -49,6 +51,7 @@ class SeasonGridWidget(ThemeAwareBackground):
         self.entry_atmos.setPlaceholderText("Global Atmosphere/Extras...")
         self.entry_atmos.setText(self.data_source.get("default_atmospheres", {}).get(self.season_name, ""))
         self.entry_atmos.setClearButtonEnabled(True)
+        self.entry_atmos.setToolTip("Additional atmosphere or global extras applied to all lights in this season.")
         self.entry_atmos.textChanged.connect(lambda: self.modified.emit())
         header_layout.addWidget(self.entry_atmos, 1)
         
@@ -85,6 +88,7 @@ class SeasonGridWidget(ThemeAwareBackground):
             # Col 1: Active
             chk_l = CheckBox()
             chk_l.setChecked(True)
+            chk_l.setToolTip(f"Include or exclude '{l_name}' for this season.")
             chk_l.stateChanged.connect(lambda: self.modified.emit())
             grid_layout.addWidget(chk_l, row, 0, Qt.AlignCenter)
 
@@ -101,6 +105,7 @@ class SeasonGridWidget(ThemeAwareBackground):
             entry_l = LineEdit()
             entry_l.setPlaceholderText(f"Use global: {default_lights.get(l_name, '')}")
             entry_l.setClearButtonEnabled(True)
+            entry_l.setToolTip(f"Override the global definition for '{l_name}' in this season.")
             entry_l.textChanged.connect(lambda: self.modified.emit())
             grid_layout.addWidget(entry_l, row, 3)
             grid_layout.setColumnStretch(3, 50)
@@ -109,12 +114,14 @@ class SeasonGridWidget(ThemeAwareBackground):
             entry_a = LineEdit()
             entry_a.setPlaceholderText("Atmosphere...")
             entry_a.setClearButtonEnabled(True)
+            entry_a.setToolTip(f"Additional atmosphere tokens specific to '{l_name}' in this season.")
             entry_a.textChanged.connect(lambda: self.modified.emit())
             grid_layout.addWidget(entry_a, row, 4)
             grid_layout.setColumnStretch(4, 30)
 
             # Col 6: Xmas Mode (SwitchButton)
             sw_x = SwitchButton()
+            sw_x.setToolTip(f"Force Christmas version for '{l_name}' variant.")
             sw_x.checkedChanged.connect(lambda: self.modified.emit())
             grid_layout.addWidget(sw_x, row, 5, Qt.AlignCenter)
 

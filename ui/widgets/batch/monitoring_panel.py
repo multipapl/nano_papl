@@ -27,6 +27,7 @@ class MonitoringPanel(QWidget):
         self.txt_prompt.setReadOnly(True)
         self.txt_prompt.setFixedHeight(80)
         self.txt_prompt.setPlaceholderText("Generation hasn't started...")
+        self.txt_prompt.setToolTip("Full text of the prompt currently being processed by the AI.")
         self.monitor_card.addWidget(self.txt_prompt)
         self.layout.addWidget(self.monitor_card, 7) # Increased stretch factor
         
@@ -37,10 +38,12 @@ class MonitoringPanel(QWidget):
         self.log_area.setReadOnly(True)
         self.log_area.setFixedHeight(120)
         self.log_area.setStyleSheet("font-family: 'Consolas', 'Monaco', monospace; font-size: 11px;")
+        self.log_area.setToolTip("Execution log showing technical details, errors, and status updates.")
         status_card.addWidget(self.log_area)
         
         prog_layout = QHBoxLayout()
         self.progress = ProgressBar()
+        self.progress.setToolTip("Overall batch completion progress.")
         self.lbl_eta = CaptionLabel("ETA: --:--")
         prog_layout.addWidget(self.progress, 1)
         prog_layout.addWidget(self.lbl_eta)
@@ -49,10 +52,12 @@ class MonitoringPanel(QWidget):
         btn_layout = QHBoxLayout()
         self.btn_start = PrimaryPushButton(FluentIcon.PLAY, "START BATCH")
         self.btn_start.setMinimumHeight(45)
+        self.btn_start.setToolTip("Start the batch generation process for all images in the input folder.")
         
         self.btn_stop = PushButton(FluentIcon.CLOSE, "STOP")
         self.btn_stop.setMinimumHeight(45)
         self.btn_stop.setEnabled(False)
+        self.btn_stop.setToolTip("Interrupt the current batch process.")
         
         btn_layout.addWidget(self.btn_start, 2)
         btn_layout.addWidget(self.btn_stop, 1)
