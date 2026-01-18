@@ -4,6 +4,11 @@ import json
 from unittest.mock import MagicMock, patch
 from core.utils import config_helper
 
+@pytest.fixture(autouse=True)
+def reset_cache():
+    """Reset the internal cache of config_helper before each test."""
+    config_helper._API_KEY_CACHE = None
+
 def test_get_value_standard(tmp_path, monkeypatch):
     """Verify loading standard values from JSON config."""
     config_file = tmp_path / "config_test.json"
@@ -11,7 +16,6 @@ def test_get_value_standard(tmp_path, monkeypatch):
     config_file.write_text(json.dumps(config_data))
     
     monkeypatch.setattr(config_helper, "CONFIG_FILE", str(config_file))
-    # Reset internal cache if any (config_helper usually loads on call)
     
     assert config_helper.get_value("data_root") == "C:/MockPath"
     assert config_helper.get_value("theme") == "Dark"
@@ -30,7 +34,7 @@ def test_set_value_standard(tmp_path, monkeypatch):
 
 @patch("core.utils.config_helper.keyring")
 def test_keyring_integration(mock_keyring, tmp_path, monkeypatch):
-    """Verify that sensitive keys are handled via keyring."""
+    """Verify that sensitive keys are handled via keyring and cache."""
     config_file = tmp_path / "config_keyring.json"
     monkeypatch.setattr(config_helper, "CONFIG_FILE", str(config_file))
     
@@ -39,8 +43,16 @@ def test_keyring_integration(mock_keyring, tmp_path, monkeypatch):
     config_helper.set_value("api_key", "secret-123")
     
     mock_keyring.set_password.assert_called_with("NanoPapl", "api_key", "secret-123")
+    assert config_helper._API_KEY_CACHE == "secret-123"
     
-    # 2. Get sensitive value
+    # 2. Get sensitive value (should hit cache first)
+    mock_keyring.get_password.reset_mock()
+    assert config_helper.get_value("api_key") == "secret-123"
+    # Should NOT call keyring because it's in cache
+    assert not mock_keyring.get_password.called
+    
+    # 3. Get after clearing cache (should hit keyring)
+    config_helper._API_KEY_CACHE = None
     mock_keyring.get_password.return_value = "secret-123"
     assert config_helper.get_value("api_key") == "secret-123"
     mock_keyring.get_password.assert_called_with("NanoPapl", "api_key")

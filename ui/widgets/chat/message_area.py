@@ -91,6 +91,8 @@ class ChatMessageArea(ThemeAwareBackground):
              item = self.container_layout.takeAt(0)
              if item.widget():
                  item.widget().deleteLater()
+        
+        self.typing_indicator = None # Ensure reference is cleared after widgets are scheduled for deletion
         self.container_layout.addStretch()
 
     def show_typing_indicator(self, show: bool) -> None:
@@ -107,7 +109,11 @@ class ChatMessageArea(ThemeAwareBackground):
             QTimer.singleShot(50, self.scroll_to_bottom)
         else:
             if self.typing_indicator:
-                self.typing_indicator.deleteLater()
+                try: 
+                    self.typing_indicator.deleteLater()
+                except RuntimeError:
+                    # Catch cases where the C++ object might have been deleted already (e.g. during clear)
+                    pass
                 self.typing_indicator = None
 
     def scroll_to_bottom(self) -> None:

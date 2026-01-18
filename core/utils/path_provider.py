@@ -49,3 +49,11 @@ class PathProvider:
         temp_path = self.app_root / "temp"
         temp_path.mkdir(exist_ok=True)
         return temp_path
+
+    def get_thumbnails_dir(self) -> Path:
+        """Returns the centralized cache directory for chat thumbnails."""
+        # Use APPDATA for persistence if documents_dir is too 'clean'? 
+        # For now, let's keep it in the default_project_dir (NanoPapl root)
+        path = self.default_project_dir / constants.THUMBNAILS_DIR_NAME
+        path.mkdir(parents=True, exist_ok=True)
+        return path

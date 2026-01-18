@@ -1,6 +1,7 @@
 from PySide6.QtCore import QThread, Signal
+from PIL import Image
 from core.llm_client import LLMClient
-from core.utils import config_helper
+from core.utils import config_helper, image_utils
 from core.utils.path_provider import PathProvider
 from core import constants
 from pathlib import Path
@@ -12,16 +13,17 @@ class ChatWorker(QThread):
     finished_signal = Signal()
     error_signal = Signal(str)
 
-    def __init__(self, api_key, model_id, history, user_message, image_paths=None, res="1K", ratio="1:1", parent=None):
+    def __init__(self, api_key, model_id, history, user_message, image_paths=None, res="1K", ratio="1:1", session_id=None, image_format="PNG", parent=None):
         super().__init__(parent)
         self.api_key = api_key
         self.model_id = model_id
-        # provider handled by LLMClient internally now
+        self.session_id = session_id
         self.history = history 
         self.user_message = user_message
         self.image_paths = image_paths or []
         self.res = res
         self.ratio = ratio
+        self.image_format = image_format
         
         # Load System Instruction from Config/Defaults
         config = config_helper.load_config()
@@ -71,8 +73,14 @@ class ChatWorker(QThread):
                 out_dir.mkdir(parents=True, exist_ok=True)
                 
                 ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                save_path = out_dir / f"gen_{ts}.png"
-                save_path.write_bytes(img_bytes)
+                from io import BytesIO
+                img = Image.open(BytesIO(img_bytes))
+                
+                ext = ".png" if self.image_format == "PNG" else ".jpg"
+                save_path = out_dir / f"gen_{ts}{ext}"
+                
+                image_utils.save_image_with_format(img, save_path, self.image_format)
+                
                 response_image_path = str(save_path.absolute())
 
             self.response_signal.emit(str(response_text).strip(), response_image_path)

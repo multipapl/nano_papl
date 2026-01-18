@@ -19,6 +19,8 @@ OPTIMIZED_DIR_NAME = "optimized"
 ASSETS_DIR_NAME = "assets"
 ICON_FILENAME = "icon.png"
 GENERATED_IMAGES_DIR_NAME = "Generated_Images"
+THUMBNAILS_DIR_NAME = ".cache/thumbnails"
+IMAGE_FORMATS = ["PNG", "JPG"]
 
 # Default Values
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"

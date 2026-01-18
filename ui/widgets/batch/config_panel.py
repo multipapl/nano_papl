@@ -6,7 +6,8 @@ from qfluentwidgets import (
     StrongBodyLabel, LineEdit, SpinBox, CheckBox, TextEdit
 )
 from core.utils import config_helper
-from ui.components import ModernPathSelector, SectionCard
+from core.config.resolutions import SUPPORTED_ASPECT_RATIOS
+from ui.components import ModernPathSelector, SectionCard, GenerationConfigWidget
 
 class ConfigPanel(QWidget):
     def __init__(self, parent=None):
@@ -41,23 +42,9 @@ class ConfigPanel(QWidget):
         engine_layout.addWidget(self.combo_engine, 1)
         settings_card.addLayout(engine_layout)
         
-        params_layout = QHBoxLayout()
-        v_res = QVBoxLayout()
-        v_res.addWidget(CaptionLabel("Resolution"))
-        self.combo_res = ComboBox()
-        self.combo_res.addItems(["1K", "2K", "4K"])
-        self.combo_res.setToolTip("Target resolution for the generated images.")
-        v_res.addWidget(self.combo_res)
-        params_layout.addLayout(v_res, 1)
-        
-        v_ratio = QVBoxLayout()
-        v_ratio.addWidget(CaptionLabel("Aspect Ratio"))
-        self.combo_ratio = ComboBox()
-        self.combo_ratio.addItems(["Auto", "1:1", "16:9", "9:16", "4:5", "3:4"])
-        self.combo_ratio.setToolTip("Target aspect ratio. 'Auto' tries to match the source image.")
-        v_ratio.addWidget(self.combo_ratio)
-        params_layout.addLayout(v_ratio, 1)
-        settings_card.addLayout(params_layout)
+        # Centralized Generation Config Widget
+        self.gen_config = GenerationConfigWidget(self)
+        settings_card.addWidget(self.gen_config)
         
         self.check_save_logs = CheckBox("Save individual .txt logs")
         self.check_save_logs.setChecked(True)
@@ -68,14 +55,6 @@ class ConfigPanel(QWidget):
         
         # 3. Google Parameters
         self.google_card = SectionCard("Google Parameters")
-        fmt_layout = QHBoxLayout()
-        fmt_layout.addWidget(BodyLabel("Format:"))
-        self.combo_fmt = ComboBox()
-        self.combo_fmt.addItems(["PNG", "JPG"])
-        self.combo_fmt.setToolTip("Output file format for images generated via Gemini.")
-        fmt_layout.addWidget(self.combo_fmt, 1)
-        self.google_card.addLayout(fmt_layout)
-        
         self.lbl_api_counter = CaptionLabel("RDP Usage: ...")
         self.google_card.addWidget(self.lbl_api_counter)
         self.layout.addWidget(self.google_card)
@@ -118,17 +97,22 @@ class ConfigPanel(QWidget):
         self.comfy_card.setVisible(not is_google)
 
     def get_state(self):
-        return {
+        state = {
             "batch_engine": self.combo_engine.currentIndex(),
-            "batch_res": self.combo_res.currentIndex(),
-            "batch_ratio": self.combo_ratio.currentIndex(),
-            "batch_fmt": self.combo_fmt.currentIndex(),
             "batch_save_logs": self.check_save_logs.isChecked(),
             "batch_seed_val": self.spin_seed.value(),
             "batch_random_seed": self.check_random_seed.isChecked(),
             "batch_input_path": self.path_in.get_path(),
             "batch_output_path": self.path_out.get_path()
         }
+        # Standardized generation config mapping (preserving legacy keys for compatibility if needed)
+        gen_cfg = self.gen_config.get_config()
+        state.update({
+            "batch_res": gen_cfg["res_index"],
+            "batch_ratio": gen_cfg["ratio_index"],
+            "batch_fmt": gen_cfg["format_index"]
+        })
+        return state
 
     def load_state(self):
         def set_combo(combo, val):
@@ -139,9 +123,13 @@ class ConfigPanel(QWidget):
                 except: pass
 
         set_combo(self.combo_engine, config_helper.get_value("batch_engine", 0))
-        set_combo(self.combo_res, config_helper.get_value("batch_res", 1)) # Default to 2K
-        set_combo(self.combo_ratio, config_helper.get_value("batch_ratio", 0))
-        set_combo(self.combo_fmt, config_helper.get_value("batch_fmt", 0))
+        
+        # Load centralized generation config
+        self.gen_config.set_config({
+            "res_index": config_helper.get_value("batch_res", 1),
+            "ratio_index": config_helper.get_value("batch_ratio", 0),
+            "format_index": config_helper.get_value("batch_fmt", 0)
+        })
         
         self.check_save_logs.setChecked(bool(config_helper.get_value("batch_save_logs", True)))
         

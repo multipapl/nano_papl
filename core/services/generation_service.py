@@ -152,12 +152,8 @@ class GenerationService:
             # base_name already includes extension from block above
             save_path = image_out_dir / base_name
 
-            # Saving
-            if out_fmt == "JPG":
-                final_img = generated_img.convert("RGB")
-                final_img.save(save_path, format="JPEG", quality=95)
-            else:
-                generated_img.save(save_path, format="PNG")
+            # Saving using centralized logic
+            image_utils.save_image_with_format(generated_img, save_path, out_fmt)
 
             # Save Log if requested
             if config.get('save_log', False):

@@ -92,9 +92,10 @@ class BatchPage(ThemeAwareBackground):
             return
             
         state = self.config_panel.get_state()
-        res_text = self.config_panel.combo_res.currentText()
-        ratio_text = self.config_panel.combo_ratio.currentText()
-        fmt_text = self.config_panel.combo_fmt.currentText()
+        gen_cfg = self.config_panel.gen_config.get_config()
+        res_text = gen_cfg["res"]
+        ratio_text = gen_cfg["ratio"]
+        fmt_text = gen_cfg["format"]
 
         self.worker = BatchWorker(
             key, in_path, out_path,
@@ -115,13 +116,14 @@ class BatchPage(ThemeAwareBackground):
             return
 
         state = self.config_panel.get_state()
+        gen_cfg = self.config_panel.gen_config.get_config()
         settings = {
             "comfy_url": config_helper.get_value("comfy_url", "http://127.0.0.1:8188"),
             "api_key": config_helper.get_value("comfy_api_key", ""),
             "input_path": in_path,
             "output_path": out_path,
-            "resolution": self.config_panel.combo_res.currentText(),
-            "ratio": self.config_panel.combo_ratio.currentText(),
+            "resolution": gen_cfg["res"],
+            "ratio": gen_cfg["ratio"],
             "dry_run": self.config_panel.check_dry_run.isChecked(),
             "workflow_path": self.default_workflow_path,
             "system_prompt": self.config_panel.text_sys_prompt.toPlainText(),

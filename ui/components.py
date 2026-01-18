@@ -1,15 +1,18 @@
 from typing import Optional, Union, List, Dict
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QFrame, QGraphicsDropShadowEffect
-from PySide6.QtCore import Qt, QSize, Signal, QTimer
+from PySide6.QtCore import Qt, QSize, Signal, QTimer, QRunnable, QThreadPool, QObject
 from PySide6.QtGui import QPainter, QColor, QPaintEvent, QFont, QTextOption, QPixmap
 from qfluentwidgets import (
     isDarkTheme, qconfig, PushButton, PrimaryPushButton, FluentIcon, 
     LineEdit, TextEdit, Theme, themeColor, ImageLabel, IconWidget,
     MessageBox, TransparentPushButton, StrongBodyLabel, CardWidget,
-    ColorPickerButton, SettingCard, setTheme, setThemeColor, ToolButton
+    ColorPickerButton, SettingCard, setTheme, setThemeColor, ToolButton,
+    ComboBox, CaptionLabel
 )
 import os
-from core.utils import config_helper
+from core.utils import config_helper, image_utils
+from core.config.resolutions import SUPPORTED_ASPECT_RATIOS
+from core import constants
 
 def init_theme():
     """
@@ -125,9 +128,42 @@ def NPButton(
     btn.setCursor(Qt.PointingHandCursor)
     return btn
 
+class ImageLoadSignals(QObject):
+    """Signals for the async image loader."""
+    finished = Signal(QPixmap)
+    error = Signal(str)
+
+class ImageLoadWorker(QRunnable):
+    """Worker to load and scale images in a separate thread."""
+    def __init__(self, path: str, target_width: int):
+        super().__init__()
+        self.path = path
+        self.target_width = target_width
+        self.signals = ImageLoadSignals()
+
+    def run(self):
+        try:
+            # Use image_utils to get cached thumbnail or the original
+            # This happens in background thread
+            display_path = image_utils.get_or_create_thumbnail(self.path, self.target_width)
+            
+            pixmap = QPixmap(display_path)
+            if pixmap.isNull():
+                # Fallback to original if thumbnail failed
+                pixmap = QPixmap(self.path)
+                
+            if not pixmap.isNull():
+                if pixmap.width() > self.target_width:
+                    pixmap = pixmap.scaledToWidth(self.target_width, Qt.SmoothTransformation)
+                self.signals.finished.emit(pixmap)
+            else:
+                self.signals.error.emit(f"Failed to load image: {self.path}")
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
 class ClickableImageLabel(ImageLabel):
     """
-    ImageLabel with click signals.
+    ImageLabel with async loading and click signals.
     Left Click -> Open in Viewer
     Right Click -> Attach to Chat
     """
@@ -136,12 +172,42 @@ class ClickableImageLabel(ImageLabel):
 
     def __init__(self, image_path: str, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
-        self.setImage(image_path)
         self.image_path = image_path
         self.setCursor(Qt.PointingHandCursor)
         self.setBorderRadius(8, 8, 8, 8)
-        self.scaledToWidth(UIConfig.MAX_CHAT_IMAGE_WIDTH)
         self.setToolTip("Left Click: Open | Right Click: Attach")
+        
+        # Start async loading
+        self._set_placeholder()
+        self._start_async_load()
+
+    def _set_placeholder(self):
+        """Set a subtle placeholder state while loading"""
+        self.setFixedSize(UIConfig.MAX_CHAT_IMAGE_WIDTH, 150) # Fixed placeholder height
+        dark = isDarkTheme()
+        opacity = "0.2" if dark else "0.1"
+        bg = f"rgba(255, 255, 255, {opacity})" if dark else f"rgba(0, 0, 0, {opacity})"
+        self.setStyleSheet(f"background-color: {bg}; border: 1px dashed {UIConfig.BORDER_SUBTLE_DARK};")
+        self.setText("Loading...")
+        self.setAlignment(Qt.AlignCenter)
+
+    def _start_async_load(self):
+        worker = ImageLoadWorker(self.image_path, UIConfig.MAX_CHAT_IMAGE_WIDTH)
+        worker.signals.finished.connect(self._on_load_finished)
+        worker.signals.error.connect(self._on_load_error)
+        QThreadPool.globalInstance().start(worker)
+
+    def _on_load_finished(self, pixmap: QPixmap):
+        self.setPixmap(pixmap)
+        self.setFixedSize(pixmap.size()) # Adjust to actual scaled size
+        self.setStyleSheet("") # Clear placeholder border
+
+    def _on_load_error(self, error: str):
+        # Visually indicate error
+        self.setText(f"❌ Load Error\n{os.path.basename(self.image_path)}")
+        self.setAlignment(Qt.AlignCenter)
+        self.setStyleSheet("color: #ff4d4d; border: 1px solid rgba(255, 77, 77, 0.3); border-radius: 8px;")
+        print(f"DEBUG: ClickableImageLabel error: {error}")
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.LeftButton:
@@ -149,6 +215,104 @@ class ClickableImageLabel(ImageLabel):
         elif event.button() == Qt.RightButton:
             self.imageClickedForAttach.emit(self.image_path)
         super().mousePressEvent(event)
+
+class GenerationConfigWidget(QWidget):
+    """
+    Unified widget for image generation parameters:
+    Resolution, Aspect Ratio, and Format.
+    """
+    configChanged = Signal(dict)
+
+    def __init__(self, parent: Optional[QWidget] = None, compact: bool = False) -> None:
+        super().__init__(parent)
+        self.compact = compact
+        self.resolutions = ["1K", "2K", "4K"]
+        self.ratios = ["Auto"] + SUPPORTED_ASPECT_RATIOS
+        self.formats = constants.IMAGE_FORMATS
+        
+        self._init_ui()
+        self._setup_connections()
+
+    def _init_ui(self):
+        self.main_layout = QHBoxLayout(self)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(6 if self.compact else 10)
+
+        # 1. Resolution
+        self.v_res = QVBoxLayout()
+        if not self.compact:
+            self.v_res.addWidget(CaptionLabel("Resolution"))
+        self.cbox_res = ComboBox(self)
+        self.cbox_res.addItems(self.resolutions)
+        self.cbox_res.setCurrentIndex(1) # Default 2K
+        self.cbox_res.setFixedWidth(80 if self.compact else 110)
+        self.v_res.addWidget(self.cbox_res)
+        self.main_layout.addLayout(self.v_res)
+
+        # 2. Aspect Ratio
+        self.v_ratio = QVBoxLayout()
+        if not self.compact:
+            self.v_ratio.addWidget(CaptionLabel("Aspect Ratio"))
+        self.cbox_ratio = ComboBox(self)
+        self.cbox_ratio.addItems(self.ratios)
+        self.cbox_ratio.setCurrentIndex(0)
+        self.cbox_ratio.setFixedWidth(80 if self.compact else 110)
+        self.v_ratio.addWidget(self.cbox_ratio)
+        self.main_layout.addLayout(self.v_ratio)
+
+        # 3. Format
+        self.v_fmt = QVBoxLayout()
+        if not self.compact:
+            self.v_fmt.addWidget(CaptionLabel("Format"))
+        self.cbox_fmt = ComboBox(self)
+        self.cbox_fmt.addItems(self.formats)
+        self.cbox_fmt.setCurrentIndex(0)
+        self.cbox_fmt.setFixedWidth(70 if self.compact else 80)
+        self.v_fmt.addWidget(self.cbox_fmt)
+        self.main_layout.addLayout(self.v_fmt)
+
+    def _setup_connections(self):
+        self.cbox_res.currentIndexChanged.connect(self._on_changed)
+        self.cbox_ratio.currentIndexChanged.connect(self._on_changed)
+        self.cbox_fmt.currentIndexChanged.connect(self._on_changed)
+
+    def _on_changed(self):
+        self.configChanged.emit(self.get_config())
+
+    def get_config(self) -> dict:
+        return {
+            "res": self.resolutions[self.cbox_res.currentIndex()],
+            "res_index": self.cbox_res.currentIndex(),
+            "ratio": self.ratios[self.cbox_ratio.currentIndex()],
+            "ratio_index": self.cbox_ratio.currentIndex(),
+            "format": self.formats[self.cbox_fmt.currentIndex()],
+            "format_index": self.cbox_fmt.currentIndex()
+        }
+
+    def set_config(self, config: dict):
+        if not config: return
+        self.blockSignals(True)
+        try:
+            if "res_index" in config:
+                self.cbox_res.setCurrentIndex(config["res_index"])
+            if "ratio_index" in config:
+                self.cbox_ratio.setCurrentIndex(config["ratio_index"])
+            if "format_index" in config:
+                self.cbox_fmt.setCurrentIndex(config["format_index"])
+        finally:
+            self.blockSignals(False)
+
+    def set_enabled(self, enabled: bool):
+        self.cbox_res.setEnabled(enabled)
+        self.cbox_ratio.setEnabled(enabled)
+        self.cbox_fmt.setEnabled(enabled)
+
+    def set_font_size(self, size: int):
+        font = self.cbox_res.font()
+        font.setPixelSize(size)
+        self.cbox_res.setFont(font)
+        self.cbox_ratio.setFont(font)
+        self.cbox_fmt.setFont(font)
 
 class MessageBubble(QWidget):
     """Standard Message Component (User & AI)"""

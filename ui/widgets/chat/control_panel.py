@@ -6,6 +6,7 @@ from qfluentwidgets import TransparentPushButton, FluentIcon
 from ui.components import AttachmentTrayItem, UIConfig
 from ui.widgets.chat import ChatInputArea
 from ui.widgets.drag_drop_overlay import DragDropOverlay
+from core.utils import image_utils
 
 class ChatControlPanel(QWidget):
     """
@@ -64,6 +65,15 @@ class ChatControlPanel(QWidget):
         self.drag_overlay.filesDropped.connect(self.handle_dropped_files)
 
     def _handle_send(self, text: str, config: dict):
+        # Resolve "Auto" aspect ratio logic
+        if config.get("ratio") == "Auto":
+            if self.current_image_paths:
+                # Use the first attached image to determine ratio
+                config["ratio"] = image_utils.get_smart_ratio(self.current_image_paths[0])
+            else:
+                # Fallback to 1:1 if no images
+                config["ratio"] = "1:1"
+        
         self.sendClicked.emit(text, config)
 
     def _handle_attachment_btn(self):

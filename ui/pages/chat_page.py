@@ -179,33 +179,54 @@ class ChatInterface(QWidget):
         
         self.worker = ChatWorker(
             api_key, config["model"], self.chat_history_api, 
-            text, imgs, res=res_val, ratio=ratio_val
+            text, imgs, res=res_val, ratio=ratio_val,
+            session_id=self.current_session_id,
+            image_format=config.get("format", "PNG")
         )
         self.worker.response_signal.connect(self.on_response)
         self.worker.error_signal.connect(self.on_error)
         self.worker.start()
 
     def on_response(self, text: str, image_path: str) -> None:
-        self.message_display.show_typing_indicator(False)
-        self.chat_history_api.append({"role": "user", "text": self.worker.user_message})
-        self.chat_history_api.append({"role": "model", "text": text})
+        # Identify which session this response belongs to
+        worker = self.sender()
+        sid = getattr(worker, 'session_id', self.current_session_id)
         
+        is_active = (sid == self.current_session_id)
         imgs = [image_path] if image_path else []
-        self.message_display.add_ai_message(text, imgs)
         
-        if self.current_session:
-            self.current_session["messages"].append({
-                "role": "model", "text": text, "images": imgs,
-                "timestamp": datetime.datetime.now().isoformat()
-            })
-            self.history_manager.save_session(self.current_session_id, self.current_session)
-        
-        self.control_panel.set_enabled(True)
+        if is_active:
+            self.message_display.show_typing_indicator(False)
+            self.chat_history_api.append({"role": "user", "text": worker.user_message})
+            self.chat_history_api.append({"role": "model", "text": text})
+            self.message_display.add_ai_message(text, imgs)
+            
+            if self.current_session:
+                self.current_session["messages"].append({
+                    "role": "model", "text": text, "images": imgs,
+                    "timestamp": datetime.datetime.now().isoformat()
+                })
+                self.history_manager.save_session(sid, self.current_session)
+            
+            self.control_panel.set_enabled(True)
+        else:
+            # Background session update
+            data = self.history_manager.load_session(sid)
+            if data:
+                data["messages"].append({
+                    "role": "model", "text": text, "images": imgs,
+                    "timestamp": datetime.datetime.now().isoformat()
+                })
+                self.history_manager.save_session(sid, data)
 
     def on_error(self, error_msg: str):
-        self.message_display.show_typing_indicator(False)
-        self.message_display.add_ai_message(f"❌ Error: {error_msg}")
-        self.control_panel.set_enabled(True)
+        worker = self.sender()
+        sid = getattr(worker, 'session_id', self.current_session_id)
+        
+        if sid == self.current_session_id:
+            self.message_display.show_typing_indicator(False)
+            self.message_display.add_ai_message(f"❌ Error: {error_msg}")
+            self.control_panel.set_enabled(True)
 
     # --- UI Actions ---
 

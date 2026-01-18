@@ -1,4 +1,4 @@
-from PySide6.QtWidgets import QWidget, QVBoxLayout, QLabel
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtCore import Qt, Signal, QSize
 from pathlib import Path
@@ -84,11 +84,20 @@ class SettingsInterface(ThemeAwareBackground):
         self.api_key_input.setEchoMode(LineEdit.Password)
         self.api_key_input.setToolTip("Enter your Google Gemini API key for cloud generation.")
         
-        btn = PrimaryPushButton(FluentIcon.SAVE, "Save Key")
-        btn.clicked.connect(self.save_api_key)
-        btn.setToolTip("Permanently save the Gemini API key to your local configuration.")
-        self.api_key_card.viewLayout.addWidget(self.api_key_input)
-        self.api_key_card.viewLayout.addWidget(btn)
+        btn_save = PrimaryPushButton(FluentIcon.SAVE, "Save Key")
+        btn_save.clicked.connect(self.save_api_key)
+        btn_save.setToolTip("Permanently save the Gemini API key to your local configuration.")
+        
+        btn_refresh = ToolButton(FluentIcon.SYNC, self)
+        btn_refresh.setToolTip("Refresh from secure storage")
+        btn_refresh.clicked.connect(self.refresh_api_key)
+        
+        h_layout = QHBoxLayout()
+        h_layout.addWidget(self.api_key_input, 1)
+        h_layout.addWidget(btn_refresh)
+        
+        self.api_key_card.viewLayout.addLayout(h_layout)
+        self.api_key_card.viewLayout.addWidget(btn_save)
         
         # ComfyUI Key
         self.comfy_key_card = ExpandSettingCard(
@@ -206,8 +215,36 @@ class SettingsInterface(ThemeAwareBackground):
     # --- Actions ---
 
     def save_api_key(self):
-        config_helper.set_value("api_key", self.api_key_input.text().strip())
-        self._show_success("Gemini API Key saved")
+        key = self.api_key_input.text().strip()
+        if not key:
+            InfoBar.warning("Warning", "API Key cannot be empty", parent=self, position=InfoBarPosition.TOP)
+            return
+            
+        # Basic validation for Gemini keys (typically ~39 characters)
+        if len(key) < 30:
+            InfoBar.warning("Suspicious Key", f"The entered key seems too short ({len(key)} chars). Gemini keys are usually ~39 chars.", 
+                           parent=self, duration=5000, position=InfoBarPosition.TOP)
+        elif len(key) > 50:
+            InfoBar.warning("Suspicious Key", f"The entered key seems too long ({len(key)} chars). Gemini keys are usually ~39 chars.", 
+                           parent=self, duration=5000, position=InfoBarPosition.TOP)
+            
+        config_helper.set_value("api_key", key)
+        self._show_success(f"Gemini API Key saved (Length: {len(key)})")
+
+    def refresh_api_key(self):
+        """Force a re-read from the secure storage."""
+        # We bypass get_value to ensure we aren't just hitting a stale cache if something changed externally
+        import keyring
+        try:
+            val = keyring.get_password(constants.KEYRING_SERVICE_NAME, constants.CONFIG_KEY_API_KEY)
+            if val:
+                val = val.strip()
+                self.api_key_input.setText(val)
+                self._show_success("API Key successfully synchronized from storage")
+            else:
+                InfoBar.warning("Not Found", "API Key was not found in secure storage.", parent=self, position=InfoBarPosition.TOP)
+        except Exception as e:
+            InfoBar.error("Keyring Error", str(e), parent=self, position=InfoBarPosition.TOP)
 
     def save_comfy_api_key(self):
         config_helper.set_value("comfy_api_key", self.comfy_key_input.text().strip())

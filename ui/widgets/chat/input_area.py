@@ -5,12 +5,13 @@ from PySide6.QtGui import QAction, QFont
 
 from qfluentwidgets import (
     FluentIcon, ToolButton, PushButton, TransparentPushButton, RoundMenu, Action, 
-    isDarkTheme, qconfig, themeColor, TransparentDropDownPushButton, CheckBox,
-    ComboBox
+    isDarkTheme, qconfig, themeColor, TransparentDropDownPushButton, CheckBox
 )
 
-from ui.components import ChatTextEdit, UIConfig
-from core.utils import config_helper
+from ui.components import ChatTextEdit, UIConfig, GenerationConfigWidget
+from core.utils import config_helper, image_utils
+from core.config.resolutions import SUPPORTED_ASPECT_RATIOS
+from core import constants
 
 class ChatInputArea(QFrame):
     """
@@ -33,20 +34,15 @@ class ChatInputArea(QFrame):
         self.models = ["gemini-3-pro-image-preview", "gemini-3-flash-preview"]
         self.model_labels = ["Pro", "Flash"]
         
-        self.current_ratio = 0
-        self.ratios = ["1:1", "16:9", "4:3", "9:16", "3:4"]
-        
-        self.current_res = 1  # Default 2K
-        self.resolutions = ["1K", "2K", "4K"]
-
         self._init_ui()
         self._setup_connections()
         
         # Initial Theme Apply
         self._on_theme_changed()
 
-    def _create_combobox(self, items: list, icons: list = None) -> ComboBox:
-        """Helper to create a styled ComboBox"""
+    def _create_combobox(self, items: list, icons: list = None) -> QWidget:
+        """Helper to create a styled ComboBox (Now using qfluentwidgets ComboBox directly if needed)"""
+        from qfluentwidgets import ComboBox
         cbox = ComboBox(self)
         if icons:
             for i, (text, icon) in enumerate(zip(items, icons)):
@@ -149,21 +145,10 @@ class ChatInputArea(QFrame):
         self.cbox_model.setToolTip("Select AI Model")
         toolbar_layout.addWidget(self.cbox_model)
         
-        # Ratio Selector (ComboBox)
-        self.cbox_ratio = self._create_combobox(self.ratios)
-        self.cbox_ratio.setFont(font)
-        self.cbox_ratio.setFixedWidth(110)
-        self.cbox_ratio.setCurrentIndex(0)
-        self.cbox_ratio.setToolTip("Select Image Aspect Ratio")
-        toolbar_layout.addWidget(self.cbox_ratio)
-        
-        # Resolution Selector (ComboBox)
-        self.cbox_res = self._create_combobox(self.resolutions)
-        self.cbox_res.setFont(font)
-        self.cbox_res.setFixedWidth(110)
-        self.cbox_res.setCurrentIndex(1) # Default 2K
-        self.cbox_res.setToolTip("Select Image Resolution")
-        toolbar_layout.addWidget(self.cbox_res)
+        # Generation Config Widget (Centralized Res, Ratio, Format)
+        self.gen_config = GenerationConfigWidget(self, compact=True)
+        self.gen_config.set_font_size(13)
+        toolbar_layout.addWidget(self.gen_config)
         
         toolbar_layout.addStretch()
         
@@ -190,16 +175,14 @@ class ChatInputArea(QFrame):
         # Settings change tracking
         self.chk_img_mode.toggled.connect(self._emit_settings_changed)
         self.cbox_model.currentIndexChanged.connect(self._emit_settings_changed)
-        self.cbox_ratio.currentIndexChanged.connect(self._emit_settings_changed)
-        self.cbox_res.currentIndexChanged.connect(self._emit_settings_changed)
+        self.gen_config.configChanged.connect(self._emit_settings_changed)
 
     def _emit_settings_changed(self):
         """Emit the current configuration when any setting is manually changed"""
         self.settingChanged.emit(self.get_chat_config())
 
     def _toggle_img_mode(self, checked: bool):
-        self.cbox_ratio.setEnabled(checked)
-        self.cbox_res.setEnabled(checked)
+        self.gen_config.set_enabled(checked)
 
     def _on_send(self):
         text = self.input_box.toPlainText().strip()
@@ -207,15 +190,14 @@ class ChatInputArea(QFrame):
 
     def get_chat_config(self) -> dict:
         """Returns current settings state as a dictionary"""
-        return {
+        config = {
             "model": self.models[self.cbox_model.currentIndex()],
             "model_index": self.cbox_model.currentIndex(),
-            "ratio": self.ratios[self.cbox_ratio.currentIndex()],
-            "ratio_index": self.cbox_ratio.currentIndex(),
-            "res": self.resolutions[self.cbox_res.currentIndex()],
-            "res_index": self.cbox_res.currentIndex(),
             "img_mode": self.chk_img_mode.isChecked()
         }
+        # Merge with centralized generation config
+        config.update(self.gen_config.get_config())
+        return config
 
     def set_chat_config(self, config: dict):
         """Applies a configuration dictionary to the UI elements"""
@@ -224,8 +206,7 @@ class ChatInputArea(QFrame):
         # Block signals to prevent infinite recursion or multiple saves
         self.chk_img_mode.blockSignals(True)
         self.cbox_model.blockSignals(True)
-        self.cbox_ratio.blockSignals(True)
-        self.cbox_res.blockSignals(True)
+        self.gen_config.blockSignals(True)
         
         try:
             if "img_mode" in config:
@@ -236,21 +217,13 @@ class ChatInputArea(QFrame):
                 self.cbox_model.setCurrentIndex(config["model_index"])
             elif "model" in config and config["model"] in self.models:
                 self.cbox_model.setCurrentIndex(self.models.index(config["model"]))
-                
-            if "ratio_index" in config:
-                self.cbox_ratio.setCurrentIndex(config["ratio_index"])
-            elif "ratio" in config and config["ratio"] in self.ratios:
-                self.cbox_ratio.setCurrentIndex(self.ratios.index(config["ratio"]))
-                
-            if "res_index" in config:
-                self.cbox_res.setCurrentIndex(config["res_index"])
-            elif "res" in config and config["res"] in self.resolutions:
-                self.cbox_res.setCurrentIndex(self.resolutions.index(config["res"]))
+            
+            # Update centralized widget
+            self.gen_config.set_config(config)
         finally:
             self.chk_img_mode.blockSignals(False)
             self.cbox_model.blockSignals(False)
-            self.cbox_ratio.blockSignals(False)
-            self.cbox_res.blockSignals(False)
+            self.gen_config.blockSignals(False)
 
     def clear_input(self):
         """Clear text field"""
@@ -336,8 +309,6 @@ class ChatInputArea(QFrame):
                 border: 1px solid {pressed};
             }}
         """)
-
-
 
     def _update_toggle_style(self):
         # Native CheckBox styling is usually sufficient. 
