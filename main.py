@@ -3,6 +3,14 @@ import os
 import contextlib
 import ctypes
 
+# Fix for taskbar icon on Windows - Set strictly before any UI imports/init
+if os.name == 'nt':
+    try:
+        myappid = 'nano_papl.v2.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
+
 # Suppress QFluentWidgets "Tips" message before any other imports
 with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
     from qfluentwidgets import setTheme, Theme
@@ -37,10 +45,7 @@ def qt_message_handler(mode, context, message):
         sys.exit(1)
 
 def main():
-    # Fix for taskbar icon on Windows
-    if os.name == 'nt':
-        myappid = 'nano_papl.v2.0'
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
 
     # Install custom message handler BEFORE creating QApplication
     qInstallMessageHandler(qt_message_handler)
