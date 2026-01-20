@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QApplication
 from PySide6.QtGui import QIcon
 from PySide6.QtCore import QtMsgType, qInstallMessageHandler
 from ui.window import ModernWindow
+from core.utils.resource_manager import Resources
 
 def qt_message_handler(mode, context, message):
     """
@@ -49,7 +50,7 @@ def main():
     # QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
     
     app = QApplication(sys.argv)
-    app.setWindowIcon(QIcon("assets/ico.ico"))
+    app.setWindowIcon(QIcon(str(Resources.get_asset("ico.ico"))))
     
     # Set default font (helps reduce some warnings)
     font = app.font()

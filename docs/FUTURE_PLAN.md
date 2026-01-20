@@ -107,6 +107,33 @@ Perform during next major UI feature addition or refactor.
 
 ## 📜 Completed
 
+### � BUG: Taskbar Icon Not Displayed on First Launch
+
+**Resolved:** v1.3.1, 2026-01-20
+**Original Priority:** Medium
+
+**Problem:** The application icon does not appear in the Windows taskbar on the first launch. It only appears after restarting the application.
+
+**Fix Applied:**
+1. Updated `main.py` to use `ResourceManager.get_asset()` for retrieving the absolute path of the icon file.
+2. Replaced the relative path `"assets/ico.ico"` with the absolute path resolved at runtime.
+
+**Files Changed:** `main.py`
+
+### 🟢 BUG: RPD Counter Not Working
+
+**Resolved:** v1.3.1, 2026-01-20
+**Original Priority:** Medium
+
+**Problem:** The Rate Per Day counter always showed 13 regardless of actual usage. The counter should reset each calendar day. Label was also typo'd as "RDP".
+
+**Fix Applied:** 
+1. Renamed "RDP" to "RPD" in UI labels.
+2. Refined `check_api_usage` and `increment_api_usage` in `batch_page.py` to be robust against missing or corrupted config data.
+3. Verified daily reset logic with standalone script.
+
+**Files Changed:** `ui/pages/batch_page.py`, `ui/widgets/batch/config_panel.py`
+
 ### 🟢 BUG: Chat Deletion Creates Infinite "New Chat" Loop
 
 **Resolved:** 2026-01-18  

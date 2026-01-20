@@ -188,25 +188,45 @@ class BatchPage(NPBasePage):
         self.config_manager.save()
 
     def check_api_usage(self):
+        """Checks and resets API usage if the day has changed."""
         today = QDate.currentDate().toString(Qt.ISODate)
-        data = self.config_manager.config.api_usage or {}
-        if data.get("date") != today:
+        config = self.config_manager.config
+        
+        # Ensure we work with a dictionary, not a string (if config was corrupted)
+        data = config.api_usage
+        if not isinstance(data, dict):
+            data = {}
+            
+        stored_date = data.get("date", "")
+        
+        # Reset if date changed or date is missing
+        if stored_date != today:
             data = {"date": today, "count": 0}
-            self.config_manager.config.api_usage = data
+            config.api_usage = data
             self.config_manager.save()
+            
         self._update_api_label(data["count"])
 
     def increment_api_usage(self):
+        """Increments the daily counter safely."""
         today = QDate.currentDate().toString(Qt.ISODate)
-        data = self.config_manager.config.api_usage or {}
-        if data.get("date") != today: data = {"date": today, "count": 0}
+        config = self.config_manager.config
+        
+        data = config.api_usage
+        if not isinstance(data, dict):
+            data = {}
+            
+        # Double-check date in case app ran across midnight
+        if data.get("date") != today:
+            data = {"date": today, "count": 0}
+            
         data["count"] = data.get("count", 0) + 1
-        self.config_manager.config.api_usage = data
+        config.api_usage = data
         self.config_manager.save()
         self._update_api_label(data["count"])
 
     def _update_api_label(self, count):
         from ui.components import UIConfig
-        self.config_panel.lbl_api_counter.setText(f"RDP Daily Usage: {count}/{self.api_limit}")
+        self.config_panel.lbl_api_counter.setText(f"RPD Daily Usage: {count}/{self.api_limit}")
         color = themeColor().name() if count < self.api_limit else UIConfig.DANGER_COLOR
         self.config_panel.lbl_api_counter.setStyleSheet(f"color: {color}; font-weight: bold;")

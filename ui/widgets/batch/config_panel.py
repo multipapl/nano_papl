@@ -55,7 +55,7 @@ class ConfigPanel(QWidget):
         
         # 3. Google Parameters
         self.google_card = SectionCard("Google Parameters")
-        self.lbl_api_counter = CaptionLabel("RDP Usage: ...")
+        self.lbl_api_counter = CaptionLabel("RPD Usage: ...")
         self.google_card.addWidget(self.lbl_api_counter)
         self.layout.addWidget(self.google_card)
         
