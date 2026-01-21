@@ -255,6 +255,7 @@ class SettingsInterface(NPBasePage):
             InfoBar.warning("Suspicious Key", f"The entered key seems too long ({len(key)} chars). Gemini keys are usually ~39 chars.", 
                            parent=self, duration=5000, position=InfoBarPosition.TOP)
             
+        self.config_manager.config.api_key = key
         self.config_manager.save()
         self._show_success(f"Gemini API Key saved (Length: {len(key)})")
 
