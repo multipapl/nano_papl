@@ -73,8 +73,13 @@ class SettingsInterface(NPBasePage):
         self.api_key_input = LineEdit()
         self.api_key_input.setPlaceholderText("Enter Key...")
         self.api_key_input.setText(self.config_manager.config.api_key)
-        self.api_key_input.setEchoMode(LineEdit.Password)
+        self.api_key_input.setEchoMode(LineEdit.Password) # Hidden by default
         self.api_key_input.setToolTip("Enter your Google Gemini API key for cloud generation.")
+        
+        # Visibility Toggle
+        self.btn_visibility = ToolButton(FluentIcon.VIEW, self)
+        self.btn_visibility.setToolTip("Show/Hide Key")
+        self.btn_visibility.clicked.connect(self.toggle_api_visibility)
         
         btn_save = PrimaryPushButton(FluentIcon.SAVE, "Save Key")
         btn_save.clicked.connect(self.save_api_key)
@@ -86,12 +91,34 @@ class SettingsInterface(NPBasePage):
         
         h_layout = QHBoxLayout()
         h_layout.addWidget(self.api_key_input, 1)
+        h_layout.addWidget(self.btn_visibility)
         h_layout.addWidget(btn_refresh)
         
         self.api_key_card.viewLayout.addLayout(h_layout)
         self.api_key_card.viewLayout.addWidget(btn_save)
+
+        # Timeout Logic
+        from qfluentwidgets import SpinBox
+        self.timeout_card = SettingCard(
+            FluentIcon.SPEED_HIGH, "API Timeout",
+            "Maximum time (seconds) to wait for generation response", self
+        )
+        self.timeout_spin = SpinBox()
+        self.timeout_spin.setRange(30, 3600) # 30s to 1 hour
+        self.timeout_spin.setValue(self.config_manager.config.api_timeout)
+        self.timeout_spin.setToolTip("Set connection timeout in seconds (Default: 600)")
         
-        # ComfyUI Key
+        btn_tout = PrimaryPushButton(FluentIcon.SAVE, "Save")
+        btn_tout.setFixedWidth(80)
+        btn_tout.clicked.connect(self.save_timeout)
+        
+        self.timeout_card.hBoxLayout.addWidget(self.timeout_spin, 0, Qt.AlignRight)
+        self.timeout_card.hBoxLayout.addSpacing(10)
+        self.timeout_card.hBoxLayout.addWidget(btn_tout, 0, Qt.AlignRight)
+        self.timeout_card.hBoxLayout.addSpacing(16)
+        
+        group.addSettingCard(self.api_key_card)
+        group.addSettingCard(self.timeout_card)
         self.comfy_key_card = ExpandSettingCard(
             FluentIcon.VPN, "ComfyUI API Key",
             "Configure your ComfyUI API access key (optional)", self
@@ -206,6 +233,14 @@ class SettingsInterface(NPBasePage):
 
     # --- Actions ---
 
+    def toggle_api_visibility(self):
+        if self.api_key_input.echoMode() == LineEdit.Password:
+            self.api_key_input.setEchoMode(LineEdit.Normal)
+            self.btn_visibility.setIcon(FluentIcon.HIDE)
+        else:
+            self.api_key_input.setEchoMode(LineEdit.Password)
+            self.btn_visibility.setIcon(FluentIcon.VIEW)
+
     def save_api_key(self):
         key = self.api_key_input.text().strip()
         if not key:
@@ -220,9 +255,14 @@ class SettingsInterface(NPBasePage):
             InfoBar.warning("Suspicious Key", f"The entered key seems too long ({len(key)} chars). Gemini keys are usually ~39 chars.", 
                            parent=self, duration=5000, position=InfoBarPosition.TOP)
             
-        self.config_manager.config.api_key = key
         self.config_manager.save()
         self._show_success(f"Gemini API Key saved (Length: {len(key)})")
+
+    def save_timeout(self):
+        val = self.timeout_spin.value()
+        self.config_manager.config.api_timeout = val
+        self.config_manager.save()
+        self._show_success(f"Timeout updated to {val} seconds")
 
     def refresh_api_key(self):
         """Force a re-read from the secure storage."""

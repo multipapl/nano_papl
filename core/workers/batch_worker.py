@@ -22,7 +22,7 @@ class BatchWorker(BaseWorker):
     time_estimate_signal = Signal(str)
     api_call_signal = Signal()
 
-    def __init__(self, api_key, input_path, output_path, resolution, ratio, output_format, model_id, check_logs, parent=None):
+    def __init__(self, api_key, input_path, output_path, resolution, ratio, output_format, model_id, check_logs, timeout=600, parent=None):
         super().__init__(parent)
         self.api_key = api_key
         self.input_path = Path(input_path)
@@ -34,6 +34,7 @@ class BatchWorker(BaseWorker):
         self.output_format = output_format
         self.model_id = model_id
         self.check_logs = check_logs
+        self.timeout = timeout
         
         # PathProvider for standardized filenames
         self.path_provider = PathProvider()
@@ -48,7 +49,7 @@ class BatchWorker(BaseWorker):
         self.log_signal.emit("--- INITIALIZING BATCH PROCESS ---")
         
         # Initialize Service
-        gen_service = GenerationService(self.api_key, self.model_id)
+        gen_service = GenerationService(self.api_key, self.model_id, self.timeout)
 
         # --- Smart Folder Logic ---
         projects = []
@@ -119,6 +120,8 @@ class BatchWorker(BaseWorker):
             project_out = self.output_path / project_dir.name
             project_out.mkdir(parents=True, exist_ok=True)
 
+            durations = []
+
             for img_path in images:
                 if not self.is_running: break
                 
@@ -136,18 +139,32 @@ class BatchWorker(BaseWorker):
                         'naming_func': self.get_unified_filename
                     }
 
-                    # Call Service
+                    # Call Service with Timing
+                    img_start = datetime.datetime.now()
                     result = gen_service.generate_image(data, img_path, config)
+                    img_end = datetime.datetime.now()
+                    
+                    # Calculate Metrics
+                    duration = (img_end - img_start).total_seconds()
+                    durations.append(duration)
+                    avg_duration = sum(durations) / len(durations)
+                    total_elapsed = (img_end - start_time).total_seconds()
+                    
+                    # Format strings
+                    t_str = f"{int(total_elapsed // 60)}m {int(total_elapsed % 60)}s"
                     
                     if result['success']:
                         if result.get('is_diff_resolution'):
                             self.log_signal.emit(f"    [WARN] Resolution Mismatch! (marked as _diff)")
                         
                         self.log_signal.emit(f"    [OK] Saved: {result['saved_path'].name}")
+                        self.log_signal.emit(f"    [TIME] Last: {duration:.1f}s | Avg: {avg_duration:.1f}s | Total: {t_str}")
+                        
                         self.api_call_signal.emit()
                         self.preview_signal.emit(str(img_path), str(result['saved_path']), data['prompt'])
                     else:
                         self.log_signal.emit(f"    [ERROR] {result['error']}")
+                        self.log_signal.emit(f"    [TIME] Failed in {duration:.1f}s | Total: {t_str}")
                         logger.error(f"DEBUG: Failed prompt:\n{data['prompt']}")
 
                     # --- Progress & ETA Update ---

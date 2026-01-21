@@ -3,9 +3,9 @@ import json
 from pathlib import Path
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QSplitter
 from PySide6.QtCore import Qt, QDate
-
 from qfluentwidgets import ScrollArea, InfoBar, InfoBarPosition, themeColor
 from ui.components import ThemeAwareBackground
+import time
 
 # Shared Managers/Utils
 from core.utils import config_helper
@@ -85,6 +85,7 @@ class BatchPage(NPBasePage):
 
         self._save_state()
         self.monitor_panel.set_busy(True)
+        self.start_time = time.time() # Start timing
         
         engine_idx = state["batch_engine"]
         if engine_idx == 0: # Google Gemini
@@ -105,11 +106,15 @@ class BatchPage(NPBasePage):
         ratio_text = gen_cfg["ratio"]
         fmt_text = gen_cfg["format"]
 
+        # Get timeout from config
+        timeout = self.config_manager.config.api_timeout
+
         self.worker = BatchWorker(
             key, in_path, out_path,
             res_text, ratio_text,
             fmt_text,
             self.MODEL_ID, state.get("batch_save_logs", True),
+            timeout, # Pass timeout
             parent=self
         )
         self._connect_signals()
@@ -166,12 +171,17 @@ class BatchPage(NPBasePage):
             if hasattr(self.worker, 'stop'): self.worker.stop()
             elif hasattr(self.worker, 'request_stop'): self.worker.request_stop()
             self.monitor_panel.btn_stop.setEnabled(False)
+            # Save RPD counter state if stopped manually
+            self.config_manager.save()
 
     def on_finished(self):
         self.monitor_panel.set_busy(False)
         self.monitor_panel.lbl_eta.setText("ETA: Done")
         self.finishStateToolTip("Generation Finished", "All tasks completed successfully")
         self.worker = None
+        
+        # Save RPD counter state
+        self.config_manager.save()
 
     def append_log(self, text):
         self.monitor_panel.append_log(text)
@@ -222,7 +232,8 @@ class BatchPage(NPBasePage):
             
         data["count"] = data.get("count", 0) + 1
         config.api_usage = data
-        self.config_manager.save()
+        # Optimization: Don't save on every increment to avoid IO lag
+        # self.config_manager.save() 
         self._update_api_label(data["count"])
 
     def _update_api_label(self, count):

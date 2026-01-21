@@ -123,6 +123,12 @@ class NPBasePage(ThemeAwareBackground):
         ctx = context or self.__class__.__name__
         error_manager.report(message, severity=ErrorSeverity.ERROR, context=ctx, details=details)
 
+    def resizeEvent(self, event):
+        """Ensure tooltip stays anchored during resize."""
+        super().resizeEvent(event)
+        if hasattr(self, '_state_tooltip') and self._state_tooltip and self._state_tooltip.isVisible():
+            self._state_tooltip.move(self._state_tooltip.getSuitablePos())
+
 # --- centralized configuration ---
 class UIConfig:
     """Design Tokens"""

@@ -6,15 +6,17 @@ import google.genai as genai
 from google.genai import types
 from core.utils.path_provider import PathProvider
 from core.utils import image_utils
+from core.logger import logger
 
 class GenerationService:
     """
     Service responsible for generating images using AI providers (currently Google GenAI).
     Handles API communication, image processing, and file saving.
     """
-    def __init__(self, api_key, model_id="gemini-3-pro-image-preview"):
+    def __init__(self, api_key, model_id="gemini-3-pro-image-preview", timeout=600):
         self.api_key = api_key
         self.model_id = model_id
+        self.timeout = timeout
         if self.api_key:
             self.client = genai.Client(api_key=self.api_key)
         else:
@@ -72,10 +74,12 @@ class GenerationService:
             elif ratio_mode != "Auto": # If not Auto and not Manual, it's specific
                  image_config_params["aspect_ratio"] = ratio_mode
 
+            # Correct way to set timeout in v1.0+ SDK via http_options
             gen_config = types.GenerateContentConfig(
                 response_modalities=["IMAGE", "TEXT"],
                 image_config=types.ImageConfig(**image_config_params),
-                temperature=0.4
+                temperature=0.4,
+                http_options={'timeout': self.timeout * 1000} # Convert seconds to ms
             )
 
             contents = [
@@ -89,11 +93,19 @@ class GenerationService:
             ]
 
             # 4. API Call
-            response = self.client.models.generate_content(
-                model=self.model_id,
-                contents=contents,
-                config=gen_config
-            )
+            from core.logger import logger
+            logger.info(f"Sending request to Google API (model={self.model_id})...")
+            
+            try:
+                response = self.client.models.generate_content(
+                    model=self.model_id,
+                    contents=contents,
+                    config=gen_config
+                )
+                logger.info("Google API response received.")
+            except Exception as e:
+                logger.error(f"Google API Error/Timeout: {e}")
+                return {'success': False, 'error': f"API Error: {str(e)}"}
 
             # 5. Process Response
             if response.parts:

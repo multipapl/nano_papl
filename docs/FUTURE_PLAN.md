@@ -147,5 +147,66 @@ Perform during next major UI feature addition or refactor.
 1. `delete_session()` now clears state first, then refreshes sidebar, then selects existing session or creates new as fallback
 2. Added `refresh_sidebar` flag to `start_new_chat()` to skip refresh when called as fallback
 
-**Files Changed:** `ui/pages/chat_page.py`
+### 🟢 PERFORMANCE: RPD Counter Lag Optimization
 
+**Resolved:** v2.0.0, 2026-01-21
+**Original Priority:** Critical
+
+**Problem:** Generation was extremely slow because the app saved the entire config file to disk after every single image to update the daily counter.
+
+**Fix Applied:**
+1. Optimized `BatchPage` to update the counter in memory during batch processing.
+2. Saving to disk now only happens when the batch finishes or is stopped.
+
+**Files Changed:** `ui/pages/batch_page.py`
+
+### 🟢 BUG: Google API Hanging (504 Timeout)
+
+**Resolved:** v2.0.0, 2026-01-21
+**Original Priority:** Critical
+
+**Problem:** The application would hang indefinitely or fail with `504 DEADLINE_EXCEEDED` because the new Google GenAI SDK lacks a default timeout, and the server was taking longer than expected.
+
+**Fix Applied:**
+1. Added explicit `http_options={'timeout': 600000}` (10 minutes) to the generation config.
+2. Added detailed logging to track request duration.
+
+**Files Changed:** `core/services/generation_service.py`
+
+### 🟢 UX: API Key Visibility
+
+**Resolved:** v2.0.0, 2026-01-21
+**Original Priority:** Low
+
+**Problem:** Users couldn't verify if their API Key was entered correctly because it was masked as a password.
+
+**Fix Applied:**
+1. Changed `EchoMode` of the API Key input field from Password to Normal.
+
+**Files Changed:** `ui/pages/settings_page.py`
+
+### 🟢 UX: Configurable API Timeout
+
+**Resolved:** v2.0.0, 2026-01-21
+**Original Priority:** Medium
+
+**Problem:** Users couldn't maximize the window properly because the orange state tooltip was not anchored. Also, the API timeout was hardcoded, causing issues with slow connections/models.
+
+**Fix Applied:**
+1. Added `resizeEvent` to `NPBasePage` to keep tooltips anchored.
+2. Added `api_timeout` field to `SettingsPage` (SpinBox) with a default of 600s.
+
+**Files Changed:** `ui/components.py`, `ui/pages/settings_page.py`, `core/models.py`
+
+### 🟢 UX: Secure API Key Toggle
+
+**Resolved:** v2.0.0, 2026-01-21
+**Original Priority:** Low
+
+**Problem:** API Key was either always hidden (bad for verification) or always visible (bad for security).
+
+**Fix Applied:**
+1. Implemented a "Show/Hide" toggle button (Eye icon) next to the API Key field.
+2. Default state is hidden (Password mode), user clicks to reveal.
+
+**Files Changed:** `ui/pages/settings_page.py`

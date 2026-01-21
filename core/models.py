@@ -105,6 +105,7 @@ class AppConfig:
     api_key: str = ""
     comfy_url: str = "http://127.0.0.1:8188"
     comfy_api_key: str = ""
+    api_timeout: int = 600  # Default 600 seconds (10 mins)
     
     # UI & Appearance
     theme_color: str = "#0078d4"
