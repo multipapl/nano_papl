@@ -1,81 +1,75 @@
-"""
-Nano Papl - AI Archviz Automation Tool
-======================================
-Main application entry point. Initializes the PyQt application,
-applies the theme, and launches the main window with all tabs.
-"""
 import sys
 import os
-import json
-from pathlib import Path
-from PySide6.QtWidgets import QApplication, QMainWindow, QTabWidget, QVBoxLayout, QWidget
-from PySide6.QtGui import QIcon, QPalette, QColor
-from PySide6.QtCore import Qt
+import contextlib
+import ctypes
 
-from ui.tab_constructor import TabConstructor
-from ui.tab_batch import TabBatch
-from ui.tab_tools import TabTools
-from ui.tab_chat import TabChat
-from ui.tab_settings import TabSettings
+# Fix for taskbar icon on Windows - Set strictly before any UI imports/init
+if os.name == 'nt':
+    try:
+        myappid = 'nano_papl.v2.0'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+    except Exception:
+        pass
 
-# config_helper is imported inside tabs or main if needed for window geometry saving
-from core.utils.resource_helper import get_resource_path
+# Suppress QFluentWidgets "Tips" message before any other imports
+with contextlib.redirect_stdout(None), contextlib.redirect_stderr(None):
+    from qfluentwidgets import setTheme, Theme
 
-class NanoPaplApp(QMainWindow):
-    def __init__(self):
-        super().__init__()
+from PySide6.QtWidgets import QApplication
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+from ui.window import ModernWindow
+from core.utils.resource_manager import Resources
 
-        self.setWindowTitle("Nano Papl v1.2.1 | AI Archviz Automation")
-        self.setWindowIcon(QIcon(get_resource_path(os.path.join("assets", "icon.png"))))
-        self.resize(1200, 900)
-
-        # Central Widget & Tabs
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(5, 5, 5, 5)
-
-        self.tabs = QTabWidget()
-        layout.addWidget(self.tabs)
-
-        # Initialize Tabs
-        self.tab_constructor = TabConstructor()
-        self.tabs.addTab(self.tab_constructor, "Constructor")
-
-        self.tab_batch = TabBatch()
-        self.tabs.addTab(self.tab_batch, "Batch Studio")
-
-        self.tab_tools = TabTools()
-        self.tabs.addTab(self.tab_tools, "Tools")
-
-        self.tab_chat = TabChat()
-        self.tabs.addTab(self.tab_chat, "Chat")
-        self.tabs.addTab(TabSettings(), "Settings")
-
-def set_dark_theme(app):
-    app.setStyle("Fusion")
-    palette = QPalette()
-    # Deep Dark Backgrounds (Inspired by VS Code / Material Dark)
-    palette.setColor(QPalette.Window, QColor(24, 24, 24))        # Main Window Background
-    palette.setColor(QPalette.WindowText, QColor(240, 240, 240)) # Main Text
-    palette.setColor(QPalette.Base, QColor(32, 32, 32))          # Input Fields / Lists
-    palette.setColor(QPalette.AlternateBase, QColor(24, 24, 24))
-    palette.setColor(QPalette.ToolTipBase, Qt.white)
-    palette.setColor(QPalette.ToolTipText, Qt.white)
-    palette.setColor(QPalette.Text, QColor(240, 240, 240))
-    palette.setColor(QPalette.Button, QColor(45, 45, 45))        # Standard Buttons
-    palette.setColor(QPalette.ButtonText, Qt.white)
-    palette.setColor(QPalette.BrightText, Qt.red)
-    palette.setColor(QPalette.Link, QColor(64, 169, 255))        # Nice Blue Link
-    palette.setColor(QPalette.Highlight, QColor(64, 169, 255))   # Selection Blue
-    palette.setColor(QPalette.HighlightedText, Qt.black)
-    app.setPalette(palette)
-
-if __name__ == "__main__":
-    app = QApplication(sys.argv)
-    set_dark_theme(app)
+def qt_message_handler(mode, context, message):
+    """
+    Custom Qt message handler to suppress known QFluentWidgets warnings.
     
-    window = NanoPaplApp()
+    QFont::setPointSize warnings come from QFluentWidgets internal components
+    (NavigationBar, SettingCard, etc.) and cannot be fixed without modifying
+    the library source code. These warnings don't affect functionality.
+    """
+    # Suppress QFont::setPointSize warnings from QFluentWidgets
+    if "QFont::setPointSize: Point size <= 0" in message:
+        return  # Silently ignore
+    
+    # Allow all other messages through
+    if mode == QtMsgType.QtDebugMsg:
+        print(f"Debug: {message}")
+    elif mode == QtMsgType.QtWarningMsg:
+        print(f"Warning: {message}")
+    elif mode == QtMsgType.QtCriticalMsg:
+        print(f"Critical: {message}")
+    elif mode == QtMsgType.QtFatalMsg:
+        print(f"Fatal: {message}")
+        sys.exit(1)
+
+def main():
+
+
+    # Install custom message handler BEFORE creating QApplication
+    qInstallMessageHandler(qt_message_handler)
+    
+    # Enable High DPI scaling
+    # QApplication.setAttribute(Qt.AA_EnableHighDpiScaling)
+    # QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps)
+    
+    app = QApplication(sys.argv)
+    app.setWindowIcon(QIcon(str(Resources.get_asset("ico.ico"))))
+    
+    # Set default font (helps reduce some warnings)
+    font = app.font()
+    font.setPointSize(10) 
+    app.setFont(font)
+
+    # Set Theme (Dark by default) + Global Accent Color
+    from ui.components import init_theme
+    init_theme()
+    
+    window = ModernWindow()
     window.show()
     
     sys.exit(app.exec())
+
+if __name__ == '__main__':
+    main()

@@ -1,8 +1,14 @@
+# Core Dependencies
 PySide6
+qfluentwidgets
 Pillow
 requests
 keyring
 google-genai
+websockets
+
+# Development & Testing
 pytest
 pytest-cov
 pytest-qt
+pyinstaller

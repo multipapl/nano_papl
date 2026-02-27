@@ -1,81 +1,90 @@
-from PySide6.QtCore import QThread, Signal
+from core.workers.base_worker import BaseWorker
+from PIL import Image
 from core.llm_client import LLMClient
-from core.utils import config_helper
+from core.utils import config_helper, image_utils
 from core.utils.path_provider import PathProvider
+from core import constants
+from core.models import GenerationConfig, GenerationResult
 from pathlib import Path
 import os
 import datetime
+import time
+from io import BytesIO
 
-class ChatWorker(QThread):
-    response_signal = Signal(str, str) # Emits (text, image_path)
-    finished_signal = Signal()
-    error_signal = Signal(str)
+class ChatWorker(BaseWorker):
+    """
+    ChatWorker migrated to BaseWorker.
+    Handles background AI conversation and image generation.
+    """
+    # Keep response_signal for compatibility with ChatInterface for now
+    response_signal = BaseWorker.result_signal 
 
-    def __init__(self, api_key, model_id, history, user_message, image_paths=None, res="1K", ratio="1:1", parent=None):
+    def __init__(self, api_key: str, config: GenerationConfig, history: list, user_message: str, image_paths=None, session_id=None, parent=None):
         super().__init__(parent)
         self.api_key = api_key
-        self.model_id = model_id
-        # provider handled by LLMClient internally now
-        self.history = history 
+        self.config = config
+        self.history = history
         self.user_message = user_message
         self.image_paths = image_paths or []
-        self.res = res
-        self.ratio = ratio
+        self.session_id = session_id
         
-        # Load System Instruction from Config/Defaults
-        config = config_helper.load_config()
-        self.system_instruction = config.get("system_instruction", config_helper.DEFAULT_SYSTEM_INSTRUCTION)
+        # Load System Instruction
+        app_config = config_helper.load_config()
+        self.system_instruction = app_config.get("system_instruction", config_helper.DEFAULT_SYSTEM_INSTRUCTION)
+
+    def execute(self):
+        start_time = time.time()
+        client = LLMClient("gemini", self.config.model_id, self.api_key)
         
-    def run(self):
-        try:
-            # We assume "gemini" as default provider for now as per previous logic, 
-            # but ideally this comes from config too.
-            client = LLMClient("gemini", self.model_id, self.api_key)
-            
-            # Call Generic Generate with Native Params
-            response_text, img_bytes = client.generate_chat(
-                self.history, 
-                self.user_message, 
-                self.image_paths, 
-                system_instruction=self.system_instruction,
-                resolution=self.res,
-                ratio=self.ratio
-            )
-            
-            response_image_path = ""
-            if img_bytes:
-                # Save to [Data Root]/Generated_Images using PathProvider logic?
-                # PathProvider has get_default_projects_path, get_documents_dir...
-                # Current logic used config data_root or default.
-                # Let's standardize on PathProvider if possible or respect config.
-                
-                # We can update PathProvider to read config if we want strict centralization,
-                # but for this specific worker, let's keep it robust.
-                
-                config = config_helper.load_config()
-                # Use PathProvider to get default if config missing
-                pp = PathProvider()
-                default_root = pp.get_default_projects_path() # ~/Documents/NanoPapl
-                
-                root_path = Path(config.get("data_root", str(default_root.parent))) # Wait, default_project_dir is .../NanoPapl
-                # The previous code had `default_root = Path(...) / "NanoPapl"`.
-                # If data_root in config is just `.../Documents`, we append NanoPapl?
-                # Let's trust PathProvider.get_default_projects_path() is the main root for projects.
-                # However, "Generated_Images" folder is usually at the root of the "App Data" folder (not APPDATA env, but user docs).
-                
-                # Let's use the PathProvider's app root concept or just use the Documents/NanoPapl root.
-                save_root = Path(config.get("data_root", str(default_root)))
-                
-                out_dir = save_root / "Generated_Images"
-                out_dir.mkdir(parents=True, exist_ok=True)
-                
-                ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                save_path = out_dir / f"gen_{ts}.png"
-                save_path.write_bytes(img_bytes)
-                response_image_path = str(save_path.absolute())
+        # Call LLM
+        response_text, img_bytes = client.generate_chat(
+            self.history, 
+            self.user_message, 
+            self.image_paths, 
+            system_instruction=self.system_instruction,
+            resolution=self.config.resolution,
+            ratio=self.config.aspect_ratio
+        )
+        
+        if not self.is_running:
+            return
 
-            self.response_signal.emit(str(response_text).strip(), response_image_path)
-            self.finished_signal.emit()
+        response_image_path = ""
+        if img_bytes:
+            save_path = self._save_generated_image(img_bytes)
+            response_image_path = str(save_path.absolute())
+            
+            # Track API Usage & Cost only if an image was successfully generated
+            config_helper.config_manager.track_api_usage(self.config.resolution)
 
-        except Exception as e:
-            self.error_signal.emit(str(e))
+        execution_time = int((time.time() - start_time) * 1000)
+        
+        # Emit standardized GenerationResult
+        result = GenerationResult.ok(
+            text=str(response_text).strip(),
+            image_path=response_image_path if response_image_path else None,
+            session_id=self.session_id,
+            model_id=self.config.model_id,
+            execution_time_ms=execution_time
+        )
+        
+        self.result_signal.emit(result)
+
+    def _save_generated_image(self, img_bytes: bytes) -> Path:
+        app_config = config_helper.load_config()
+        pp = PathProvider()
+        
+        # Determine save directory
+        default_root = pp.get_default_projects_path()
+        save_root = Path(app_config.get("data_root", str(default_root)))
+        out_dir = save_root / constants.GENERATED_IMAGES_DIR_NAME
+        out_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save file
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        img = Image.open(BytesIO(img_bytes))
+        ext = ".png" if self.config.image_format == "PNG" else ".jpg"
+        save_path = out_dir / f"gen_{ts}{ext}"
+        
+        image_utils.save_image_with_format(img, save_path, self.config.image_format)
+        return save_path

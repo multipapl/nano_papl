@@ -44,10 +44,9 @@ class ComfyOrchestrator:
         output_path = Path(output_path_str) if output_path_str else self.project_provider.get_renders_dir(input_path)
         
         workflow_path = self.settings.get("workflow_path", "")
-        dry_run = self.settings.get("dry_run", False)
         
         self.log(f"--- Starting ComfyUI Batch ---")
-        self.log(f"Mode: {'DRY RUN (No Generation)' if dry_run else 'LIVE GENERATION'}")
+        self.log(f"Mode: LIVE GENERATION")
 
         # 1. Load Workflow Template
         try:
@@ -118,13 +117,13 @@ class ComfyOrchestrator:
             if not self.is_running: break
             
             try:
-                self._process_single_task(task, i, total_tasks, workflow_template, output_path, dry_run)
+                self._process_single_task(task, i, total_tasks, workflow_template, output_path)
             except Exception as e:
                 self.log(f"Critical Error processing task {i}: {e}")
 
         self.log("Batch Cycle Completed.")
 
-    def _process_single_task(self, task: dict, index: int, total_tasks: int, workflow_template: dict, output_path: Path, dry_run: bool) -> None:
+    def _process_single_task(self, task: dict, index: int, total_tasks: int, workflow_template: dict, output_path: Path) -> None:
         project_dir = task["project"]
         img_path = task["image"]
         p_data = task["prompt"]
@@ -147,7 +146,7 @@ class ComfyOrchestrator:
         
         if not comfy_server_filename:
             self.log(f"Skipping due to upload failure (or server unavailable).")
-            if not dry_run: return
+            return
 
         # Step B: Prepare Workflow
         current_workflow = json.loads(json.dumps(workflow_template))
@@ -187,14 +186,7 @@ class ComfyOrchestrator:
             temp_prefix = f"TEMP_{clean_stem}"
             current_workflow[save_node_id]["inputs"]["filename_prefix"] = temp_prefix
 
-        # Step C: Execution / Dry Run
-        if dry_run:
-            self.log(f">> DRY RUN: Uploaded {unique_filename}")
-            self.progress_callback((index + 1) / total_tasks * 100)
-            time.sleep(0.1)
-            return
-
-        # LIVE
+        # Step C: Execution
         api_key = self.settings.get("api_key", "")
         prompt_id = self.api.queue_prompt(current_workflow, api_key)
         
@@ -250,11 +242,9 @@ class ComfyOrchestrator:
                 last_saved = save_path
                 
                 # Save Prompt Text
-                if prompt_text:
+                if prompt_text and self.settings.get("save_logs", True):
                     txt_name = Path(target_name).stem + ".txt"
                     txt_path = image_out_dir / txt_name
-                    # Only write if doesn't exist? Or overwrite? 
-                    # GenerationService overwrites. Consistency.
                     try:
                         full_log = f"PROMPT:\n{prompt_text}"
                         txt_path.write_text(full_log, encoding="utf-8")

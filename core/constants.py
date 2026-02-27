@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 
 # Application Metadata
-APP_NAME = "NanoPapl"
-APP_VERSION = "1.3.0"
-WINDOW_TITLE_PREFIX = f"{APP_NAME} v{APP_VERSION} | AI Archviz Automation"
+APP_NAME = "Nano Papl"
+APP_VERSION = "2.0.0"
+WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION} | AI Archviz Automation"
 
 # Configuration Keys
 CONFIG_KEY_API_KEY = "api_key"
@@ -12,12 +12,23 @@ CONFIG_FILE_NAME = "config.json"
 PRESETS_FILE_NAME = "presets.json"
 KEYRING_SERVICE_NAME = "NanoPapl"
 
+# API Cost Estimation (prices per generation)
+API_PRICING = {
+    "1K": 0.14,
+    "2K": 0.14,
+    "4K": 0.24,
+    "DEFAULT": 0.14  # Fallback for chat or unspecified
+}
+
 # File Names & Paths
 DEFAULT_PROMPTS_FILE = "prompts.md"
 RENDERS_DIR_NAME = "_renders"
 OPTIMIZED_DIR_NAME = "optimized"
 ASSETS_DIR_NAME = "assets"
 ICON_FILENAME = "icon.png"
+GENERATED_IMAGES_DIR_NAME = "Generated_Images"
+THUMBNAILS_DIR_NAME = ".cache/thumbnails"
+IMAGE_FORMATS = ["PNG", "JPG"]
 
 # Default Values
 DEFAULT_COMFY_URL = "http://127.0.0.1:8188"

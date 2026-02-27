@@ -1,0 +1,138 @@
+
+from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QFrame
+from PySide6.QtGui import QIcon
+from PySide6.QtCore import Qt, QTimer
+from qfluentwidgets import (FluentWindow, NavigationItemPosition, FluentIcon, 
+                            Theme, setTheme, qconfig, ToolButton, setThemeColor)
+from pathlib import Path
+import os
+
+# Import Pages
+from ui.pages.settings_page import SettingsInterface
+from ui.pages.chat_page import ChatInterface
+from ui.pages.constructor_page import ConstructorPage
+from ui.pages.tools_page import ToolsPage
+from ui.pages.batch_page import BatchPage
+from ui.components import UIConfig
+
+# Import managers for dependency injection
+from core.history_manager import HistoryManager
+from core.utils import config_helper
+from core import constants
+from core.utils.resource_manager import Resources
+
+class ModernWindow(FluentWindow):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle(constants.WINDOW_TITLE)
+        self.setWindowIcon(QIcon(str(Resources.get_asset("ico.ico"))))
+        self.resize(1100, 1000)
+        self._center_window()
+        
+        # Centralized initialization (Dependency Injection pattern)
+        self._init_managers()
+        
+        # 1. Init Interfaces with dependency injection
+        self.home_interface = ConstructorPage(self.config_manager, self)
+        self.tools_interface = ToolsPage(self)
+        self.batch_interface = BatchPage(self.config_manager, self)
+        self.chat_interface = ChatInterface(
+            history_manager=self.history_manager,
+            config_manager=self.config_manager,
+            parent=self
+        )
+        self.settings_interface = SettingsInterface(self.config_manager, self)
+        
+        # 2. Add to Navigation (Top)
+        self.addSubInterface(self.home_interface, FluentIcon.TILES, "Prompts Builder")
+        self.addSubInterface(self.batch_interface, FluentIcon.PROJECTOR, "Generation")
+        self.addSubInterface(self.chat_interface, FluentIcon.CHAT, "Chat")
+        self.addSubInterface(self.tools_interface, FluentIcon.DEVELOPER_TOOLS, "Tools")
+        
+        # 3. Custom Theme Toggle (Above Settings)
+        # We initialize it carefully to avoid TypeError from @overload
+        self.theme_toggle = ToolButton(self.navigationInterface)
+        self.theme_toggle.setIcon(FluentIcon.BRIGHTNESS)
+        self.theme_toggle.isSelectable = False  # Skip NavigationPanel focus
+        self.theme_toggle.setToolTip("Toggle Theme")
+        
+        self.navigationInterface.addWidget(
+            routeKey='themeToggle',
+            widget=self.theme_toggle,
+            onClick=self._toggle_theme,
+            position=NavigationItemPosition.BOTTOM
+        )
+        
+        # 4. Settings (Bottom-most)
+        self.addSubInterface(self.settings_interface, FluentIcon.SETTING, "Settings", NavigationItemPosition.BOTTOM)
+        
+        # Init icon state and subscribe to changes
+        self._on_theme_changed(qconfig.theme)
+        qconfig.themeChanged.connect(self._on_theme_changed)
+        
+        # Set default startup page
+        QTimer.singleShot(0, lambda: self.switchTo(self.batch_interface))
+        
+        # Restore Chat sidebar visibility
+        self.chat_interface.chat_sidebar.setVisible(self.config_manager.config.chat_sidebar_visible)
+
+    def _on_theme_changed(self, theme):
+        """Update the sidebar icon and window icon based on current theme"""
+        # Toggle icon logic: Show 'Moon' (QUIET_HOURS) when Light, 'Sun' (BRIGHTNESS) when Dark
+        # BRIGHTNESS = Sun, QUIET_HOURS = Moon
+        icon = FluentIcon.BRIGHTNESS if theme == Theme.DARK else FluentIcon.QUIET_HOURS
+        self.theme_toggle.setIcon(icon)
+        
+        # Update window icon based on theme
+        icon_name = "ico.ico" if theme == Theme.DARK else "ico_black.ico"
+        self.setWindowIcon(QIcon(str(Resources.get_asset(icon_name))))
+
+    def _toggle_theme(self):
+        """Invoke toggle with a tiny delay to avoid collision with nav panel logic"""
+        QTimer.singleShot(0, self._do_toggle_theme)
+
+    def _do_toggle_theme(self):
+        """Actual global theme toggle logic"""
+        new_theme = Theme.LIGHT if qconfig.theme == Theme.DARK else Theme.DARK
+        setTheme(new_theme)
+        
+        # Load unified theme color, fallback to theme-specific defaults
+        default_color = UIConfig.ACCENT_DEFAULT_DARK if new_theme == Theme.DARK else UIConfig.ACCENT_DEFAULT_LIGHT
+        saved_color = config_helper.get_value("theme_color", 
+                                              config_helper.get_value("theme_color_dark" if new_theme == Theme.DARK else "theme_color_light", 
+                                                                     default_color))
+            
+        setThemeColor(saved_color)
+        qconfig.themeChanged.emit(new_theme)
+    
+    def _init_managers(self) -> None:
+        """Initialize shared managers (Dependency Injection pattern)"""
+        self.config_manager = config_helper.config_manager
+        
+        default_root = Path(os.path.expanduser("~")) / "Documents" / constants.APP_NAME.replace(" ", "")
+        root_path = Path(self.config_manager.config.data_root or str(default_root))
+        
+        hist_path = root_path / "History"
+        self.history_manager = HistoryManager(base_dir=hist_path)
+        
+        # Register global error handler for UI notifications
+        from core.utils.error_manager import error_manager, ErrorSeverity
+        from qfluentwidgets import InfoBar, InfoBarPosition
+        
+        def ui_error_handler(error):
+            if error.severity == ErrorSeverity.CRITICAL:
+                InfoBar.error(title="Critical Error", content=error.message, parent=self, duration=5000, position=InfoBarPosition.TOP)
+            elif error.severity == ErrorSeverity.WARNING:
+                InfoBar.warning(title="Warning", content=error.message, parent=self, duration=3000, position=InfoBarPosition.TOP)
+            else:
+                InfoBar.error(title="Error", content=error.message, parent=self, duration=3000, position=InfoBarPosition.TOP)
+        
+        error_manager.set_ui_handler(ui_error_handler)
+
+    def _center_window(self):
+        """Center the window on the current screen."""
+        screen = self.screen().availableGeometry()
+        size = self.geometry()
+        x = (screen.width() - size.width()) // 2
+        y = (screen.height() - size.height()) // 2
+        self.move(x, y)

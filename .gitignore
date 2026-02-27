@@ -17,8 +17,6 @@ logs/
 # Build & Distribution
 build/
 dist/
-*.spec
-scripts/
 temp/
 
 # Environment & IDE
@@ -40,4 +38,8 @@ _renders/
 data/history/
 
 # Documentation
-docs/
+# docs/
+docs/TRUTH_TEST_V1/
+legacy/
+assets/*.png
+
