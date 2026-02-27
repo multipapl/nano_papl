@@ -82,6 +82,7 @@ class ChatInterface(NPBasePage):
         self.control_panel.settingChanged.connect(self.save_current_settings)
         self.control_panel.clearClicked.connect(self.clear_current_chat)
         self.control_panel.folderClicked.connect(self.open_output_folder)
+        self.control_panel.stopClicked.connect(self.force_stop_worker)
         content_layout.addWidget(self.control_panel)
         
         self.splitter.addWidget(self.content_widget)
@@ -205,60 +206,75 @@ class ChatInterface(NPBasePage):
     def on_response(self, result) -> None:
         from core.models import GenerationResult
         
-        # Unpack standardized result
-        if isinstance(result, GenerationResult):
-            text = result.text_response or ""
-            image_path = result.output_path
-            sid = result.session_id or self.current_session_id
-        else:
-            # Legacy fallback (tuple)
-            text, image_path = result
-            worker = self.sender()
-            sid = getattr(worker, 'session_id', self.current_session_id)
-        
-        is_active = (sid == self.current_session_id)
-        imgs = [image_path] if image_path else []
-        
-        if is_active:
+        try:
+            # Unpack standardized result
+            if isinstance(result, GenerationResult):
+                text = result.text_response or ""
+                image_path = result.output_path
+                sid = result.session_id or self.current_session_id
+            else:
+                # Legacy fallback (tuple)
+                text, image_path = result
+                worker = self.sender()
+                sid = getattr(worker, 'session_id', self.current_session_id)
+            
+            is_active = (sid == self.current_session_id)
+            imgs = [image_path] if image_path else []
+            
+            if is_active:
+                self.message_display.show_typing_indicator(False)
+                
+                # Get original user message from worker
+                worker = self.sender()
+                user_msg = getattr(worker, 'user_message', '')
+                self.chat_history_api.append({"role": "user", "text": user_msg})
+                self.chat_history_api.append({"role": "model", "text": text})
+                self.message_display.add_ai_message(text, imgs)
+                
+                if self.current_session:
+                    self.current_session["messages"].append({
+                        "role": "model", "text": text, "images": imgs,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    })
+                    self.history_manager.save_session(sid, self.current_session)
+            else:
+                # Background session update
+                data = self.history_manager.load_session(sid)
+                if data:
+                    data["messages"].append({
+                        "role": "model", "text": text, "images": imgs,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    })
+                    self.history_manager.save_session(sid, data)
+        finally:
+            # ALWAYS re-enable UI, regardless of which session is active
             self.message_display.show_typing_indicator(False)
             self.finishStateToolTip("Ready", "Response received")
-            
-            # Get original user message from worker
-            worker = self.sender()
-            user_msg = getattr(worker, 'user_message', '')
-            self.chat_history_api.append({"role": "user", "text": user_msg})
-            self.chat_history_api.append({"role": "model", "text": text})
-            self.message_display.add_ai_message(text, imgs)
-            
-            if self.current_session:
-                self.current_session["messages"].append({
-                    "role": "model", "text": text, "images": imgs,
-                    "timestamp": datetime.datetime.now().isoformat()
-                })
-                self.history_manager.save_session(sid, self.current_session)
-            
             self.control_panel.set_enabled(True)
-        else:
-            # Background session update
-            data = self.history_manager.load_session(sid)
-            if data:
-                data["messages"].append({
-                    "role": "model", "text": text, "images": imgs,
-                    "timestamp": datetime.datetime.now().isoformat()
-                })
-                self.history_manager.save_session(sid, data)
 
     def on_error(self, error_msg: str):
-        worker = self.sender()
-        sid = getattr(worker, 'session_id', self.current_session_id)
-        
-        if sid == self.current_session_id:
+        try:
+            worker = self.sender()
+            sid = getattr(worker, 'session_id', self.current_session_id)
+            
+            if sid == self.current_session_id:
+                self.message_display.add_ai_message(f"❌ Error: {error_msg}")
+        finally:
             self.message_display.show_typing_indicator(False)
-            self.message_display.add_ai_message(f"❌ Error: {error_msg}")
             self.finishStateToolTip("Error", "Generation failed")
             self.control_panel.set_enabled(True)
 
     # --- UI Actions ---
+
+    def force_stop_worker(self):
+        """Hard-stop the current chat worker and unlock the UI."""
+        if self.worker and self.worker.isRunning():
+            self.worker.stop()
+            self.worker.wait(2000)
+        
+        self.message_display.show_typing_indicator(False)
+        self.finishStateToolTip("Stopped", "Generation cancelled by user")
+        self.control_panel.set_enabled(True)
 
     def toggle_sidebar(self):
         visible = not self.chat_sidebar.isVisible()

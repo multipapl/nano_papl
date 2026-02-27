@@ -9,7 +9,7 @@ from qfluentwidgets import (
     SwitchButton, Theme, setTheme, FluentIcon, SettingCardGroup, 
     SwitchSettingCard, isDarkTheme, LineEdit, PrimaryPushButton, 
     InfoBar, InfoBarPosition, ExpandSettingCard, ColorPickerButton, SettingCard,
-    setThemeColor, qconfig, ToolButton, ScrollArea
+    setThemeColor, qconfig, ToolButton, ScrollArea, ComboBox
 )
 
 from core.utils import config_helper
@@ -42,6 +42,7 @@ class SettingsInterface(NPBasePage):
         self._init_title()
         
         # 2. Settings Groups
+        self._init_statistics_group()
         self._init_api_group()
         self._init_appearance_group()
         self._init_comfy_group()
@@ -205,6 +206,141 @@ class SettingsInterface(NPBasePage):
         self.data_root_card.viewLayout.addWidget(btn)
         group.addSettingCard(self.data_root_card)
         self.layout.addWidget(group)
+
+    def _init_statistics_group(self):
+        group = SettingCardGroup("API Usage Statistics", self.container)
+        
+        # Month Selector
+        self.stats_month_card = SettingCard(
+            FluentIcon.CALENDAR, "Select Month",
+            "Choose which month to view statistics for", self
+        )
+        self.month_combo = ComboBox(self.stats_month_card)
+        self.stats_month_card.hBoxLayout.addWidget(self.month_combo, 0, Qt.AlignRight)
+        self.stats_month_card.hBoxLayout.addSpacing(16)
+        
+        # Daily RPD Usage
+        self.rpd_stats_card = SettingCard(
+            FluentIcon.INFO, "Daily API Usage (RPD)",
+            "Number of API requests made today (Limit: 250)", self
+        )
+        self.rpd_count_label = QLabel("0 / 250")
+        self.rpd_count_label.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        self.rpd_stats_card.hBoxLayout.addWidget(self.rpd_count_label, 0, Qt.AlignRight)
+        self.rpd_stats_card.hBoxLayout.addSpacing(16)
+        
+        # Monthly Total
+        self.total_stats_card = SettingCard(
+            FluentIcon.PIE_SINGLE, "Monthly Generations",
+            "Total successful generations (Chat + Batch) for the selected month", self
+        )
+        self.total_count_label = QLabel("0")
+        self.total_count_label.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        self.total_stats_card.hBoxLayout.addWidget(self.total_count_label, 0, Qt.AlignRight)
+        self.total_stats_card.hBoxLayout.addSpacing(16)
+        
+        # Estimated Cost
+        self.cost_stats_card = SettingCard(
+            FluentIcon.TAG, "Estimated Monthly Cost",
+            "Estimated API cost based on generated resolutions (1K/2K: $0.14, 4K: $0.24)", self
+        )
+        self.cost_count_label = QLabel("$0.00")
+        self.cost_count_label.setFont(QFont("Segoe UI", 16, QFont.Bold))
+        # Optional: green color for money
+        self.cost_count_label.setStyleSheet("color: #4CAF50;") 
+        self.cost_stats_card.hBoxLayout.addWidget(self.cost_count_label, 0, Qt.AlignRight)
+        self.cost_stats_card.hBoxLayout.addSpacing(16)
+        
+        # Clear Statistics Button
+        from qfluentwidgets import PrimaryPushSettingCard
+        self.clear_stats_card = PrimaryPushSettingCard(
+            "Clear Data",
+            FluentIcon.DELETE,
+            "Wipe Local Statistics",
+            "Permanently delete all local API usage tracking data and reset limits.", self
+        )
+        self.clear_stats_card.clicked.connect(self._clear_statistics)
+        
+        group.addSettingCard(self.rpd_stats_card)
+        group.addSettingCard(self.stats_month_card)
+        group.addSettingCard(self.total_stats_card)
+        group.addSettingCard(self.cost_stats_card)
+        group.addSettingCard(self.clear_stats_card)
+        
+        self.layout.addWidget(group)
+        
+        # Populate data
+        self._populate_statistics()
+        self.month_combo.currentTextChanged.connect(self._update_statistics_display)
+
+    def _populate_statistics(self):
+        usage_data = getattr(self.config_manager.config, "monthly_api_usage", {})
+        if not usage_data or not isinstance(usage_data, dict):
+            self.month_combo.addItem("No Data Available")
+            self.month_combo.setEnabled(False)
+            return
+
+        months = sorted([k for k in usage_data.keys() if isinstance(k, str) and "-" in k], reverse=True)
+        self.month_combo.addItems(months)
+        if months:
+            self.month_combo.setCurrentIndex(0)
+            self._update_statistics_display(months[0])
+
+    def _update_statistics_display(self, month_key=None):
+        if not month_key:
+            month_key = self.month_combo.currentText()
+            
+        # 1. Update Monthly Total & Cost
+        usage_data = getattr(self.config_manager.config, "monthly_api_usage", {})
+        if isinstance(usage_data, dict):
+            month_data = usage_data.get(month_key, {"total": 0, "cost": 0.0})
+            if not isinstance(month_data, dict):
+                month_data = {"total": 0, "cost": 0.0}
+            
+            # Legacy migration fallback in UI just in case
+            total = month_data.get("total", 0) + month_data.get("chat", 0) + month_data.get("batch", 0)
+            self.total_count_label.setText(str(total))
+            
+            # Update Cost Display
+            cost = month_data.get("cost", 0.0)
+            self.cost_count_label.setText(f"${cost:.2f}")
+            
+        # 2. Update Daily RPD
+        from PySide6.QtCore import QDate
+        today = QDate.currentDate().toString(Qt.ISODate)
+        daily_data = getattr(self.config_manager.config, "api_usage", {})
+        if not isinstance(daily_data, dict):
+            daily_data = {}
+            
+        # Check if daily data is from today, else show 0
+        current_count = daily_data.get("count", 0) if daily_data.get("date") == today else 0
+        
+        self.rpd_count_label.setText(f"{current_count} / 250")
+        
+        # Color coding for RPD
+        from ui.components import UIConfig
+        from qfluentwidgets import themeColor
+        color = themeColor().name() if current_count < 250 else UIConfig.DANGER_COLOR
+        self.rpd_count_label.setStyleSheet(f"color: {color}; font-weight: bold;")
+
+    def showEvent(self, event):
+        """Overridden from QWidget to refresh data every time the page is shown."""
+        super().showEvent(event)
+        self._update_statistics_display()
+        
+    def _clear_statistics(self):
+        from PySide6.QtCore import QDate
+        today = QDate.currentDate().toString(Qt.ISODate)
+        
+        # Wipe the data
+        self.config_manager.config.monthly_api_usage = {}
+        self.config_manager.config.api_usage = {"date": today, "count": 0}
+        self.config_manager.save()
+        
+        # Reset UI
+        self.month_combo.clear()
+        self._populate_statistics()
+        self._update_statistics_display()
 
     def _init_maintenance_group(self):
         group = SettingCardGroup("Maintenance", self.container)

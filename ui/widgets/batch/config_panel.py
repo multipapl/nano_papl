@@ -53,13 +53,7 @@ class ConfigPanel(QWidget):
         
         self.layout.addWidget(settings_card)
         
-        # 3. Google Parameters
-        self.google_card = SectionCard("Google Parameters")
-        self.lbl_api_counter = CaptionLabel("RPD Usage: ...")
-        self.google_card.addWidget(self.lbl_api_counter)
-        self.layout.addWidget(self.google_card)
-        
-        # 4. ComfyUI Parameters
+        # 3. ComfyUI Parameters
         self.comfy_card = SectionCard("ComfyUI Parameters")
         self.comfy_card.setVisible(False)
         
@@ -93,7 +87,6 @@ class ConfigPanel(QWidget):
 
     def _on_engine_changed(self, text):
         is_google = "Google" in text
-        self.google_card.setVisible(is_google)
         self.comfy_card.setVisible(not is_google)
 
     def get_state(self):

@@ -126,6 +126,7 @@ class AppConfig:
     
     # Statistics & Misc
     api_usage: Dict = field(default_factory=dict)
+    monthly_api_usage: Dict = field(default_factory=dict)
     
     # Internal: hold unknown keys to prevent data loss during migration
     _extra: Dict = field(default_factory=dict, repr=False)

@@ -53,6 +53,9 @@ class ChatWorker(BaseWorker):
         if img_bytes:
             save_path = self._save_generated_image(img_bytes)
             response_image_path = str(save_path.absolute())
+            
+            # Track API Usage & Cost only if an image was successfully generated
+            config_helper.config_manager.track_api_usage(self.config.resolution)
 
         execution_time = int((time.time() - start_time) * 1000)
         
@@ -64,6 +67,7 @@ class ChatWorker(BaseWorker):
             model_id=self.config.model_id,
             execution_time_ms=execution_time
         )
+        
         self.result_signal.emit(result)
 
     def _save_generated_image(self, img_bytes: bytes) -> Path:

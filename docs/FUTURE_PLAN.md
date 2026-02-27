@@ -105,6 +105,103 @@ Perform during next major UI feature addition or refactor.
 
 ---
 
+## Vertex AI Provider Integration
+
+**Status:** ⚪ Backlog  
+**Priority:** Medium  
+**Estimated Effort:** ~2-3 hours
+
+### Current State
+The app uses **Google AI Studio** (free/pay-as-you-go API key) with `google.genai` SDK. Only two models available:
+- `gemini-3-pro-image-preview` — text + image generation
+- `gemini-3-flash-preview` — text only
+
+### What Vertex AI Offers
+Vertex AI is Google Cloud's enterprise ML platform. Key differences:
+
+| Feature | AI Studio (Current) | Vertex AI |
+|---------|--------------------|-----------|
+| Auth | API Key | GCP Service Account / ADC |
+| Models | 2 Gemini models | All Gemini + Imagen 3/4, Claude via Model Garden, Llama, etc. |
+| Rate Limits | 15 RPM (free), 1000+ RPM (paid) | Configurable per-project quotas |
+| Pricing | Per-token/image | Same rates, but GCP billing |
+| Image Gen | Gemini native only | Imagen 3/4 (higher quality, more styles) |
+| Region | Global | Region-specific endpoints |
+
+### Feasibility Analysis
+
+**Good news:** The existing architecture is perfectly ready. `LLMProviderFactory` already uses a Factory pattern:
+```
+LLMClient → LLMProviderFactory.get_provider("gemini") → GeminiProvider
+                                           ("vertex") → VertexAIProvider  ← NEW
+```
+
+The `google.genai` SDK (`google-genai` package) **already supports Vertex AI** natively. The only difference is initialization:
+```python
+# Current (AI Studio)
+client = genai.Client(api_key="...")
+
+# Vertex AI — same SDK, different auth
+client = genai.Client(
+    vertexai=True,
+    project="my-gcp-project",
+    location="us-central1"
+)
+```
+
+After this single change, **all `client.models.generate_content()` and `client.chats.create()` calls remain identical.** Zero changes to the generation logic.
+
+### Implementation Steps
+1. Add a Settings toggle: "Use Vertex AI" with fields for GCP Project ID and Region
+2. Create `VertexAIProvider(LLMProvider)` in `llm_factory.py` — mostly a copy of `GeminiProvider` with different `Client()` init
+3. Update `LLMProviderFactory` to route to the correct provider
+4. Add `google-auth` dependency for ADC (Application Default Credentials)
+5. Optionally: add Imagen model support as a separate generation mode
+
+### Is It Worth It?
+
+**Yes, if:**
+- You want access to **Imagen 3/4** (much better at photorealistic generation than Gemini native)
+- You need higher rate limits for production use
+- You want to test new models as Google releases them (Model Garden)
+
+**Not worth it if:**
+- You're happy with current Gemini image generation quality
+- Setting up GCP billing and service accounts feels like overhead
+- The free tier is sufficient for your usage
+
+### Conclusion
+Thanks to the existing Factory pattern, this is a **low-effort, high-value** addition. The SDK is the same (`google-genai`), so the change is mostly about authentication and adding a UI toggle. The biggest unlock is access to **Imagen** and **higher rate limits**.
+
+---
+
+## Parallel Chat Generation Queue
+
+**Status:** ⚪ Backlog  
+**Priority:** Low (nice-to-have)
+
+### Current State
+Chat generation is strictly sequential — the user must wait for each request to complete before sending the next one.
+
+### Problem
+When generating multiple 4K images in chat, the user has to wait 30-60s per image. Queuing 10 prompts and letting them process in parallel would dramatically improve throughput.
+
+### Proposed Solution
+Google Gemini API allows concurrent requests on a single API key (limited by RPM/RPD). Implementation would require:
+1. Replace single `self.worker` with a worker pool or `asyncio`-based queue
+2. Allow submitting multiple prompts while previous ones are still processing
+3. Results arrive and display in chat as they complete
+4. Respect RPM limits (15 req/min on free tier)
+
+### Benefits
+- Much faster workflow for bulk image generation in chat
+- No need to wait for each individual response
+
+### Implementation Trigger
+Implement when chat-based image generation becomes the primary workflow.
+
+---
+
 ## 📜 Completed
 
 ### � BUG: Taskbar Icon Not Displayed on First Launch

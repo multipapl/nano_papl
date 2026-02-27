@@ -160,6 +160,10 @@ class BatchWorker(BaseWorker):
                         self.log_signal.emit(f"    [OK] Saved: {result['saved_path'].name}")
                         self.log_signal.emit(f"    [TIME] Last: {duration:.1f}s | Avg: {avg_duration:.1f}s | Total: {t_str}")
                         
+                        # Track API Usage
+                        from core.utils import config_helper
+                        config_helper.config_manager.track_api_usage(self.resolution)
+                        
                         self.api_call_signal.emit()
                         self.preview_signal.emit(str(img_path), str(result['saved_path']), data['prompt'])
                     else:

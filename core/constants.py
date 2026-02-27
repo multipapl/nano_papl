@@ -3,7 +3,7 @@ from pathlib import Path
 
 # Application Metadata
 APP_NAME = "Nano Papl"
-APP_VERSION = "2.0.0rc"
+APP_VERSION = "2.0.0"
 WINDOW_TITLE = f"{APP_NAME} v{APP_VERSION} | AI Archviz Automation"
 
 # Configuration Keys
@@ -11,6 +11,14 @@ CONFIG_KEY_API_KEY = "api_key"
 CONFIG_FILE_NAME = "config.json"
 PRESETS_FILE_NAME = "presets.json"
 KEYRING_SERVICE_NAME = "NanoPapl"
+
+# API Cost Estimation (prices per generation)
+API_PRICING = {
+    "1K": 0.14,
+    "2K": 0.14,
+    "4K": 0.24,
+    "DEFAULT": 0.14  # Fallback for chat or unspecified
+}
 
 # File Names & Paths
 DEFAULT_PROMPTS_FILE = "prompts.md"

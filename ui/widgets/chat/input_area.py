@@ -25,6 +25,7 @@ class ChatInputArea(QFrame):
     clearClicked = Signal()          # Emits when clear button clicked
     folderClicked = Signal()         # Emits when folder button clicked
     settingChanged = Signal(dict)    # Emits full config dict when any setting changes
+    stopClicked = Signal()           # Emits when stop/reset button clicked
     
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -136,6 +137,27 @@ class ChatInputArea(QFrame):
         self.v_sep.setFrameShadow(QFrame.Sunken)
         self.v_sep.setFixedSize(1, 16) # Height 16px
         toolbar_layout.addWidget(self.v_sep)
+        
+        # Stop/Reset Button (Red, scary, away from Send)
+        self.btn_stop = ToolButton(FluentIcon.CLOSE, self)
+        self.btn_stop.setFixedSize(28, 28)
+        self.btn_stop.setIconSize(QSize(14, 14))
+        self.btn_stop.setToolTip("Force stop current generation")
+        self.btn_stop.clicked.connect(self.stopClicked.emit)
+        self.btn_stop.setStyleSheet("""
+            ToolButton {
+                border-radius: 14px;
+                background-color: #E53935;
+                border: none;
+            }
+            ToolButton:hover {
+                background-color: #C62828;
+            }
+            ToolButton:pressed {
+                background-color: #B71C1C;
+            }
+        """)
+        toolbar_layout.addWidget(self.btn_stop)
         
         # Model Selector (ComboBox)
         self.cbox_model = self._create_combobox(self.model_labels)

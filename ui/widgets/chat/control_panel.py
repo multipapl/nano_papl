@@ -17,6 +17,7 @@ class ChatControlPanel(QWidget):
     clearClicked = Signal()
     folderClicked = Signal()
     settingChanged = Signal(dict)
+    stopClicked = Signal()
 
     def __init__(self, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
@@ -55,6 +56,7 @@ class ChatControlPanel(QWidget):
         self.input_area.clearClicked.connect(self.clearClicked.emit)
         self.input_area.folderClicked.connect(self.folderClicked.emit)
         self.input_area.settingChanged.connect(self.settingChanged.emit)
+        self.input_area.stopClicked.connect(self.stopClicked.emit)
         
         input_container_layout.addWidget(self.input_area)
         self.layout.addWidget(self.input_container)
