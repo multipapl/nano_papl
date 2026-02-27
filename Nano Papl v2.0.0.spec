@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Nano Papl v2.0.0rc',
+    name='Nano Papl v2.0.0',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

@@ -105,73 +105,24 @@ Perform during next major UI feature addition or refactor.
 
 ---
 
-## Vertex AI Provider Integration
+## Alternative AI Provider Support (Image & Video)
 
 **Status:** ⚪ Backlog  
-**Priority:** Medium  
-**Estimated Effort:** ~2-3 hours
+**Priority:** Low
 
-### Current State
-The app uses **Google AI Studio** (free/pay-as-you-go API key) with `google.genai` SDK. Only two models available:
-- `gemini-3-pro-image-preview` — text + image generation
-- `gemini-3-flash-preview` — text only
+### Overview
+The application currently supports only Google Gemini for AI generation. In the future, it may be beneficial to integrate additional third-party APIs for image and video generation, either directly or via an aggregator service (single API key, multiple models).
 
-### What Vertex AI Offers
-Vertex AI is Google Cloud's enterprise ML platform. Key differences:
+### Architecture Readiness
+The existing `LLMProviderFactory` pattern is designed for exactly this — new providers can be added incrementally by implementing the `LLMProvider` interface, with no changes to existing generation logic.
 
-| Feature | AI Studio (Current) | Vertex AI |
-|---------|--------------------|-----------|
-| Auth | API Key | GCP Service Account / ADC |
-| Models | 2 Gemini models | All Gemini + Imagen 3/4, Claude via Model Garden, Llama, etc. |
-| Rate Limits | 15 RPM (free), 1000+ RPM (paid) | Configurable per-project quotas |
-| Pricing | Per-token/image | Same rates, but GCP billing |
-| Image Gen | Gemini native only | Imagen 3/4 (higher quality, more styles) |
-| Region | Global | Region-specific endpoints |
+### Potential Scope
+- Alternative image generation engines (different styles, price points, quality)
+- Video generation APIs (e.g., AI-powered video synthesis from a single image)
+- Aggregator services that unify multiple providers under a single API key
 
-### Feasibility Analysis
-
-**Good news:** The existing architecture is perfectly ready. `LLMProviderFactory` already uses a Factory pattern:
-```
-LLMClient → LLMProviderFactory.get_provider("gemini") → GeminiProvider
-                                           ("vertex") → VertexAIProvider  ← NEW
-```
-
-The `google.genai` SDK (`google-genai` package) **already supports Vertex AI** natively. The only difference is initialization:
-```python
-# Current (AI Studio)
-client = genai.Client(api_key="...")
-
-# Vertex AI — same SDK, different auth
-client = genai.Client(
-    vertexai=True,
-    project="my-gcp-project",
-    location="us-central1"
-)
-```
-
-After this single change, **all `client.models.generate_content()` and `client.chats.create()` calls remain identical.** Zero changes to the generation logic.
-
-### Implementation Steps
-1. Add a Settings toggle: "Use Vertex AI" with fields for GCP Project ID and Region
-2. Create `VertexAIProvider(LLMProvider)` in `llm_factory.py` — mostly a copy of `GeminiProvider` with different `Client()` init
-3. Update `LLMProviderFactory` to route to the correct provider
-4. Add `google-auth` dependency for ADC (Application Default Credentials)
-5. Optionally: add Imagen model support as a separate generation mode
-
-### Is It Worth It?
-
-**Yes, if:**
-- You want access to **Imagen 3/4** (much better at photorealistic generation than Gemini native)
-- You need higher rate limits for production use
-- You want to test new models as Google releases them (Model Garden)
-
-**Not worth it if:**
-- You're happy with current Gemini image generation quality
-- Setting up GCP billing and service accounts feels like overhead
-- The free tier is sufficient for your usage
-
-### Conclusion
-Thanks to the existing Factory pattern, this is a **low-effort, high-value** addition. The SDK is the same (`google-genai`), so the change is mostly about authentication and adding a UI toggle. The biggest unlock is access to **Imagen** and **higher rate limits**.
+### Implementation Trigger
+Consider when a compelling alternative emerges that offers clear advantages over the current provider for specific tasks (e.g., significantly cheaper quick drafts, or video generation capabilities).
 
 ---
 
